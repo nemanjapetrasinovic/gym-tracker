@@ -6,10 +6,10 @@ A clean, single-screen Android app for tracking your gym membership, personal tr
 
 ## Features
 
-- **Membership Tracking** — Set your payment date, auto-calculates 30-day expiry with a color-coded progress bar (green → yellow → red)
+- **Membership Tracking** — Set your payment date, auto-calculates 30-day expiry with a color-coded progress bar (teal → gold → coral)
 - **Personal Training Counter** — Track how many PT sessions you purchased vs. used vs. remaining
 - **Daily Check-In** — Log today as a regular or personal training session, with undo/change support
-- **Activity Heatmap** — GitHub-style 16-week grid with two colors: sky blue for regular training, periwinkle for personal training
+- **Activity Heatmap** — GitHub-style 16-week grid with two colors: light blue for regular training, purple for personal training
 - **Streak Counter** — Tracks consecutive training days
 - **Dark theme** with cool minimal color scheme and Material You (dynamic color) support on Android 12+
 
@@ -94,8 +94,8 @@ app/src/main/java/com/gymtracker/
 - Already checked in? Use **"Change to PT/Regular"** or **"Undo Check-in"**
 
 ### Activity Heatmap
-- Sky blue cell = regular training day
-- Periwinkle cell = personal training day
+- Light blue cell = regular training day
+- Purple cell = personal training day
 - Dark cell = no training
 - Scroll horizontally to see older weeks
 
