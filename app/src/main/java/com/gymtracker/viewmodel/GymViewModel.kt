@@ -10,6 +10,8 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+enum class Screen { Dashboard, Settings }
+
 data class GymUiState(
     val membershipStartDate: String? = null,
     val membershipDaysRemaining: Int? = null,
@@ -20,11 +22,12 @@ data class GymUiState(
     val personalTrainingsRemaining: Int = 0,
     val todaySession: TrainingSession? = null,
     val allSessions: List<TrainingSession> = emptyList(),
-    val currentStreak: Int = 0,
     val selectedDate: String = LocalDate.now().toString(),
     val selectedDateFormatted: String = "",
     val selectedDateSession: TrainingSession? = null,
-    val isSelectedDateToday: Boolean = true
+    val isSelectedDateToday: Boolean = true,
+    val ptPurchases: List<PtPurchase> = emptyList(),
+    val lastBackupTimestamp: Long? = null
 )
 
 class GymViewModel(application: Application) : AndroidViewModel(application) {
@@ -33,22 +36,34 @@ class GymViewModel(application: Application) : AndroidViewModel(application) {
         application,
         GymDatabase::class.java,
         "gym_database"
-    ).build()
+    ).addMigrations(MIGRATION_1_2).build()
 
     private val prefs = GymPreferences(application)
-    private val repository = GymRepository(db.trainingSessionDao(), prefs)
+    private val repository = GymRepository(db.trainingSessionDao(), db.ptPurchaseDao(), prefs)
 
     private val displayFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy")
     private val selectedDateDisplayFormatter = DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", Locale.ENGLISH)
 
     private val _selectedDate = MutableStateFlow(LocalDate.now())
 
+    private val _currentScreen = MutableStateFlow(Screen.Dashboard)
+    val currentScreen: StateFlow<Screen> = _currentScreen.asStateFlow()
+
+    fun navigateTo(screen: Screen) { _currentScreen.value = screen }
+
+    init {
+        viewModelScope.launch {
+            repository.runMigrationIfNeeded()
+        }
+    }
+
     val uiState: StateFlow<GymUiState> = combine(
         repository.membershipStartDate,
-        repository.personalTrainingsPurchased,
+        repository.totalPtPurchased,
         repository.personalTrainingCount,
         repository.allSessions,
-        _selectedDate
+        _selectedDate,
+        combine(repository.allPtPurchases, repository.lastBackupTimestamp) { pt, ts -> pt to ts }
     ) { args ->
         val membershipStart = args[0] as String?
         val ptPurchased = args[1] as Int
@@ -56,6 +71,10 @@ class GymViewModel(application: Application) : AndroidViewModel(application) {
         @Suppress("UNCHECKED_CAST")
         val sessions = args[3] as List<TrainingSession>
         val selectedDate = args[4] as LocalDate
+        @Suppress("UNCHECKED_CAST")
+        val extra = args[5] as Pair<List<PtPurchase>, Long?>
+        val ptPurchases = extra.first
+        val lastBackup = extra.second
 
         val today = LocalDate.now().toString()
         val todaySession = sessions.find { it.date == today }
@@ -76,9 +95,6 @@ class GymViewModel(application: Application) : AndroidViewModel(application) {
             progressFraction = elapsed / 30f
         }
 
-        // Streak calculation
-        val streak = calculateStreak(sessions)
-
         GymUiState(
             membershipStartDate = membershipStart,
             membershipDaysRemaining = daysRemaining,
@@ -89,30 +105,14 @@ class GymViewModel(application: Application) : AndroidViewModel(application) {
             personalTrainingsRemaining = maxOf(0, ptPurchased - ptUsed),
             todaySession = todaySession,
             allSessions = sessions,
-            currentStreak = streak,
             selectedDate = selectedDateStr,
             selectedDateFormatted = selectedDate.format(selectedDateDisplayFormatter),
             selectedDateSession = selectedDateSession,
-            isSelectedDateToday = selectedDate == LocalDate.now()
+            isSelectedDateToday = selectedDate == LocalDate.now(),
+            ptPurchases = ptPurchases,
+            lastBackupTimestamp = lastBackup
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GymUiState())
-
-    private fun calculateStreak(sessions: List<TrainingSession>): Int {
-        if (sessions.isEmpty()) return 0
-        val dates = sessions.map { LocalDate.parse(it.date) }.sortedDescending()
-        var streak = 0
-        var checkDate = LocalDate.now()
-        // Allow today or yesterday as streak start
-        if (dates.first() != checkDate && dates.first() != checkDate.minusDays(1)) return 0
-        if (dates.first() == checkDate.minusDays(1)) checkDate = checkDate.minusDays(1)
-        for (date in dates) {
-            if (date == checkDate) {
-                streak++
-                checkDate = checkDate.minusDays(1)
-            } else break
-        }
-        return streak
-    }
 
     fun setSelectedDate(date: LocalDate) {
         if (!date.isAfter(LocalDate.now())) {
@@ -138,15 +138,126 @@ class GymViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateSessionType(date: String, isPersonalTraining: Boolean) {
+        viewModelScope.launch {
+            repository.updateSessionType(date, isPersonalTraining)
+        }
+    }
+
     fun setMembershipStartDate(date: String) {
         viewModelScope.launch {
             repository.setMembershipStartDate(date)
         }
     }
 
-    fun setPersonalTrainingsPurchased(count: Int) {
+    fun setPtPurchaseForMonth(month: String, count: Int) {
         viewModelScope.launch {
-            repository.setPersonalTrainingsPurchased(count)
+            repository.setPtPurchaseForMonth(month, count)
+        }
+    }
+
+    fun addPtPurchase(count: Int) {
+        viewModelScope.launch {
+            repository.addPtPurchase(count)
+        }
+    }
+
+    suspend fun createBackupCsv(fromDate: String, toDate: String): String {
+        val allSessions = repository.getAllSessionsOnce()
+        val allPurchases = repository.getAllPtPurchasesOnce()
+        val membershipStart = uiState.value.membershipStartDate
+
+        val sessions = allSessions.filter { it.date in fromDate..toDate }
+        val fromMonth = fromDate.substring(0, 7)
+        val toMonth = toDate.substring(0, 7)
+        val purchases = allPurchases.filter { it.month in fromMonth..toMonth }
+
+        return buildString {
+            appendLine("# GymTracker Backup")
+            appendLine("# membershipStartDate=${membershipStart ?: ""}")
+            appendLine()
+            appendLine("[sessions]")
+            appendLine("date,isPersonalTraining")
+            sessions.forEach { s ->
+                appendLine("${s.date},${s.isPersonalTraining}")
+            }
+            appendLine()
+            appendLine("[ptPurchases]")
+            appendLine("month,count")
+            purchases.forEach { p ->
+                appendLine("${p.month},${p.count}")
+            }
+        }
+    }
+
+    suspend fun createBackupCsv(): String {
+        val sessions = repository.getAllSessionsOnce()
+        val purchases = repository.getAllPtPurchasesOnce()
+        val membershipStart = uiState.value.membershipStartDate
+
+        return buildString {
+            appendLine("# GymTracker Backup")
+            appendLine("# membershipStartDate=${membershipStart ?: ""}")
+            appendLine()
+            appendLine("[sessions]")
+            appendLine("date,isPersonalTraining")
+            sessions.forEach { s ->
+                appendLine("${s.date},${s.isPersonalTraining}")
+            }
+            appendLine()
+            appendLine("[ptPurchases]")
+            appendLine("month,count")
+            purchases.forEach { p ->
+                appendLine("${p.month},${p.count}")
+            }
+        }
+    }
+
+    fun restoreFromCsv(csv: String) {
+        viewModelScope.launch {
+            val lines = csv.lines()
+            var membershipStart: String? = null
+            val sessions = mutableListOf<TrainingSession>()
+            val purchases = mutableListOf<PtPurchase>()
+            var section = ""
+
+            for (line in lines) {
+                val trimmed = line.trim()
+                when {
+                    trimmed.startsWith("# membershipStartDate=") -> {
+                        val value = trimmed.substringAfter("=").trim()
+                        if (value.isNotEmpty()) membershipStart = value
+                    }
+                    trimmed == "[sessions]" -> { section = "sessions" }
+                    trimmed == "[ptPurchases]" -> { section = "ptPurchases" }
+                    trimmed.isEmpty() || trimmed.startsWith("#") -> { /* skip */ }
+                    trimmed.startsWith("date,") || trimmed.startsWith("month,") -> { /* skip headers */ }
+                    section == "sessions" -> {
+                        val parts = trimmed.split(",", limit = 2)
+                        if (parts.size == 2) {
+                            sessions.add(TrainingSession(
+                                date = parts[0],
+                                isPersonalTraining = parts[1].toBooleanStrictOrNull() ?: false
+                            ))
+                        }
+                    }
+                    section == "ptPurchases" -> {
+                        val parts = trimmed.split(",", limit = 2)
+                        if (parts.size == 2) {
+                            val count = parts[1].toIntOrNull() ?: 0
+                            if (count > 0) purchases.add(PtPurchase(month = parts[0], count = count))
+                        }
+                    }
+                }
+            }
+
+            repository.restoreData(sessions, purchases, membershipStart)
+        }
+    }
+
+    fun setLastBackupTimestamp(ts: Long) {
+        viewModelScope.launch {
+            repository.setLastBackupTimestamp(ts)
         }
     }
 }

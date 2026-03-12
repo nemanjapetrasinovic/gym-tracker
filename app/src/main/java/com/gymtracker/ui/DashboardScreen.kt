@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.gymtracker.data.PtPurchase
 import com.gymtracker.data.TrainingSession
 import com.gymtracker.viewmodel.GymViewModel
 import java.time.LocalDate
@@ -33,7 +34,11 @@ import java.util.Locale
 // ─── Dashboard Screen ─────────────────────────────────────────────────────────
 
 @Composable
-fun DashboardScreen(modifier: Modifier = Modifier, vm: GymViewModel = viewModel()) {
+fun DashboardScreen(
+    modifier: Modifier = Modifier,
+    vm: GymViewModel = viewModel(),
+    onOpenSettings: () -> Unit = {}
+) {
     val state by vm.uiState.collectAsStateWithLifecycle()
 
     Column(
@@ -64,26 +69,12 @@ fun DashboardScreen(modifier: Modifier = Modifier, vm: GymViewModel = viewModel(
                 )
             )
             Spacer(Modifier.weight(1f))
-            // Streak badge
-            if (state.currentStreak > 0) {
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = GymOrange.copy(alpha = 0.15f)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("🔥", fontSize = 16.sp)
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            text = "${state.currentStreak} day streak",
-                            color = GymOrange,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        )
-                    }
-                }
+            IconButton(onClick = onOpenSettings, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = "Settings",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 
@@ -101,7 +92,9 @@ fun DashboardScreen(modifier: Modifier = Modifier, vm: GymViewModel = viewModel(
             purchased = state.personalTrainingsPurchased,
             used = state.personalTrainingsUsed,
             remaining = state.personalTrainingsRemaining,
-            onSetPurchased = { vm.setPersonalTrainingsPurchased(it) }
+            ptPurchases = state.ptPurchases,
+            onAddPt = { vm.addPtPurchase(it) },
+            onManagePurchases = onOpenSettings
         )
 
         // Check-in Card
@@ -124,7 +117,8 @@ fun DashboardScreen(modifier: Modifier = Modifier, vm: GymViewModel = viewModel(
         ActivityHeatmap(
             sessions = state.allSessions,
             onDateClick = { vm.setSelectedDate(it) },
-            onDeleteSession = { vm.removeSessionForDate(it) }
+            onDeleteSession = { vm.removeSessionForDate(it) },
+            onEditSession = { date, isPt -> vm.updateSessionType(date, isPt) }
         )
 
         Spacer(Modifier.height(16.dp))
@@ -249,16 +243,18 @@ fun PersonalTrainingCard(
     purchased: Int,
     used: Int,
     remaining: Int,
-    onSetPurchased: (Int) -> Unit
+    ptPurchases: List<PtPurchase>,
+    onAddPt: (Int) -> Unit,
+    onManagePurchases: () -> Unit
 ) {
-    var showEditDialog by remember { mutableStateOf(false) }
+    var showAddDialog by remember { mutableStateOf(false) }
 
     GymCard(icon = Icons.Default.Person, title = "Personal Trainings", iconTint = GymBlue) {
         if (purchased == 0) {
             EmptyStateRow(
                 message = "No personal trainings added",
-                actionLabel = "Add Sessions",
-                onClick = { showEditDialog = true }
+                actionLabel = "Add PT",
+                onClick = { showAddDialog = true }
             )
         } else {
             Row(
@@ -296,25 +292,40 @@ fun PersonalTrainingCard(
                 }
             }
 
+            Spacer(Modifier.height(8.dp))
+
+            FilledTonalButton(
+                onClick = { showAddDialog = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Add PT")
+            }
+
             TextButton(
-                onClick = { showEditDialog = true },
+                onClick = onManagePurchases,
                 contentPadding = PaddingValues(0.dp)
             ) {
                 Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("Edit purchased count", fontSize = 12.sp)
+                Text("Manage purchases", fontSize = 12.sp)
             }
         }
     }
 
-    if (showEditDialog) {
-        PTCountDialog(
-            current = purchased,
+    if (showAddDialog) {
+        val currentMonth = java.time.YearMonth.now()
+        val currentMonthTotal = ptPurchases
+            .find { it.month == currentMonth.toString() }?.count ?: 0
+        AddPtSessionsDialog(
+            currentMonth = currentMonth,
+            currentTotal = currentMonthTotal,
             onConfirm = { count ->
-                onSetPurchased(count)
-                showEditDialog = false
+                onAddPt(count)
+                showAddDialog = false
             },
-            onDismiss = { showEditDialog = false }
+            onDismiss = { showAddDialog = false }
         )
     }
 }
@@ -526,7 +537,8 @@ fun CheckInCard(
 fun ActivityHeatmap(
     sessions: List<TrainingSession>,
     onDateClick: (LocalDate) -> Unit,
-    onDeleteSession: (String) -> Unit
+    onDeleteSession: (String) -> Unit,
+    onEditSession: (String, Boolean) -> Unit
 ) {
     val sessionMap = remember(sessions) { sessions.associateBy { it.date } }
     var showCalendar by remember { mutableStateOf(false) }
@@ -732,7 +744,8 @@ fun ActivityHeatmap(
                 sessionMap = sessionMap,
                 onMonthChange = { calendarMonth = it },
                 onDateClick = onDateClick,
-                onDeleteSession = onDeleteSession
+                onDeleteSession = onDeleteSession,
+                onEditSession = onEditSession
             )
         }
     }
@@ -777,7 +790,8 @@ fun TrainingCalendar(
     sessionMap: Map<String, TrainingSession>,
     onMonthChange: (YearMonth) -> Unit,
     onDateClick: (LocalDate) -> Unit,
-    onDeleteSession: (String) -> Unit
+    onDeleteSession: (String) -> Unit,
+    onEditSession: (String, Boolean) -> Unit
 ) {
     val today = LocalDate.now()
     val daysInMonth = yearMonth.lengthOfMonth()
@@ -930,6 +944,8 @@ fun TrainingCalendar(
     }
 
     // Session action dialog
+    var editingSessionDate by remember { mutableStateOf<LocalDate?>(null) }
+
     tappedSessionDate?.let { date ->
         val dateStr = date.toString()
         val session = sessionMap[dateStr]
@@ -952,7 +968,7 @@ fun TrainingCalendar(
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        onDateClick(date)
+                        editingSessionDate = date
                         tappedSessionDate = null
                     }) { Text("Edit") }
                 },
@@ -967,6 +983,86 @@ fun TrainingCalendar(
             )
         } else {
             tappedSessionDate = null
+        }
+    }
+
+    // Edit session type dialog
+    editingSessionDate?.let { date ->
+        val dateStr = date.toString()
+        val session = sessionMap[dateStr]
+        if (session != null) {
+            AlertDialog(
+                onDismissRequest = { editingSessionDate = null },
+                title = { Text("Edit Session") },
+                text = {
+                    Column {
+                        Text(
+                            date.format(sessionDialogFormatter),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Text("Change session type:", style = MaterialTheme.typography.bodyMedium)
+                        Spacer(Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val isCurrentlyPt = session.isPersonalTraining
+                            OutlinedButton(
+                                onClick = {
+                                    if (isCurrentlyPt) {
+                                        onEditSession(dateStr, false)
+                                    }
+                                    editingSessionDate = null
+                                },
+                                modifier = Modifier.weight(1f),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (!isCurrentlyPt) HeatmapRegular else MaterialTheme.colorScheme.outline
+                                ),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = if (!isCurrentlyPt) HeatmapRegular.copy(alpha = 0.15f) else Color.Transparent
+                                )
+                            ) {
+                                Text(
+                                    "Regular",
+                                    color = if (!isCurrentlyPt) HeatmapRegular else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    if (!isCurrentlyPt) {
+                                        onEditSession(dateStr, true)
+                                    }
+                                    editingSessionDate = null
+                                },
+                                modifier = Modifier.weight(1f),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isCurrentlyPt) HeatmapPT else MaterialTheme.colorScheme.outline
+                                ),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = if (isCurrentlyPt) HeatmapPT.copy(alpha = 0.15f) else Color.Transparent
+                                )
+                            ) {
+                                Text(
+                                    "Personal",
+                                    color = if (isCurrentlyPt) HeatmapPT else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { editingSessionDate = null }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        } else {
+            editingSessionDate = null
         }
     }
 }
@@ -1105,6 +1201,54 @@ fun PTCountDialog(
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(count.toIntOrNull() ?: 0) }) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+fun AddPtSessionsDialog(
+    currentMonth: java.time.YearMonth,
+    currentTotal: Int,
+    onConfirm: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var count by remember { mutableStateOf("") }
+    val monthLabel = "${currentMonth.month.getDisplayName(java.time.format.TextStyle.FULL, Locale.ENGLISH)} ${currentMonth.year}"
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add PT Sessions") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "Adding to $monthLabel (currently $currentTotal)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                OutlinedTextField(
+                    value = count,
+                    onValueChange = { if (it.all { c -> c.isDigit() } && it.length <= 3) count = it },
+                    label = { Text("Sessions purchased") },
+                    singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val c = count.toIntOrNull() ?: 0
+                    if (c > 0) onConfirm(c)
+                },
+                enabled = (count.toIntOrNull() ?: 0) > 0
+            ) { Text("Add") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
