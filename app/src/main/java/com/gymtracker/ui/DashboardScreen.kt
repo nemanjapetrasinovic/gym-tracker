@@ -497,7 +497,7 @@ fun CheckInCard(
                 Button(
                     onClick = { onCheckIn(false) },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = GymBlue),
+                    colors = ButtonDefaults.buttonColors(containerColor = GymOrange),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Icon(Icons.Default.FitnessCenter, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -507,7 +507,7 @@ fun CheckInCard(
                 Button(
                     onClick = { onCheckIn(true) },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = GymOrange),
+                    colors = ButtonDefaults.buttonColors(containerColor = GymBlue),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(18.dp))
