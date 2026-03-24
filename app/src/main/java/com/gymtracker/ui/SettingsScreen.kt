@@ -52,7 +52,6 @@ fun SettingsScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Header
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
@@ -74,8 +73,7 @@ fun SettingsScreen(
             )
         }
 
-        // Backup & Restore Card
-        GymCard(icon = Icons.Default.CloudUpload, title = "Backup & Restore", iconTint = GymOrange) {
+        GymCard(icon = Icons.Default.CloudUpload, title = "Backup & Restore", iconTint = GymBlue) {
             Text(
                 text = "Save your training data to Google Drive or local storage. You can restore it on any device.",
                 style = MaterialTheme.typography.bodySmall,
@@ -87,7 +85,7 @@ fun SettingsScreen(
                 Button(
                     onClick = { showBackupChoice = true },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = GymOrange),
+                    colors = ButtonDefaults.buttonColors(containerColor = GymBlue),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Icon(Icons.Default.Upload, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -97,7 +95,7 @@ fun SettingsScreen(
                 Button(
                     onClick = { showRestoreConfirm = true },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = GymBlue),
+                    colors = ButtonDefaults.buttonColors(containerColor = GymPurple),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -124,8 +122,7 @@ fun SettingsScreen(
             )
         }
 
-        // Personal Training Purchases Card
-        GymCard(icon = Icons.Default.Person, title = "Personal Training Purchases", iconTint = GymBlue) {
+        GymCard(icon = Icons.Default.Person, title = "Personal Training Purchases", iconTint = GymPurple) {
             if (state.ptPurchases.isEmpty()) {
                 Text(
                     text = "No purchases recorded yet. Add your monthly PT purchases to track usage.",
@@ -134,7 +131,6 @@ fun SettingsScreen(
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
             } else {
-                // Monthly list
                 state.ptPurchases.forEach { purchase ->
                     val ym = YearMonth.parse(purchase.month)
                     val label = "${ym.month.getDisplayName(TextStyle.FULL, Locale.ENGLISH)} ${ym.year}"
@@ -160,7 +156,7 @@ fun SettingsScreen(
                             Text(
                                 text = "${purchase.count} sessions",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = GymBlue,
+                                color = GymPurple,
                                 fontWeight = FontWeight.Bold
                             )
                             Spacer(Modifier.width(8.dp))
@@ -176,10 +172,9 @@ fun SettingsScreen(
 
                 Spacer(Modifier.height(10.dp))
 
-                // Summary
                 Surface(
                     shape = RoundedCornerShape(10.dp),
-                    color = GymBlue.copy(alpha = 0.1f),
+                    color = GymPurple.copy(alpha = 0.1f),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -203,7 +198,6 @@ fun SettingsScreen(
         Spacer(Modifier.height(16.dp))
     }
 
-    // Restore confirmation dialog
     if (showRestoreConfirm) {
         AlertDialog(
             onDismissRequest = { showRestoreConfirm = false },
@@ -221,7 +215,6 @@ fun SettingsScreen(
         )
     }
 
-    // Edit purchase dialog
     editingPurchase?.let { purchase ->
         EditPurchaseDialog(
             purchase = purchase,
@@ -233,7 +226,6 @@ fun SettingsScreen(
         )
     }
 
-    // Backup choice dialog
     if (showBackupChoice) {
         AlertDialog(
             onDismissRequest = { showBackupChoice = false },
@@ -254,7 +246,6 @@ fun SettingsScreen(
         )
     }
 
-    // From date picker
     if (showFromDatePicker) {
         GymDatePickerDialog(
             title = "Backup from date",
@@ -267,7 +258,6 @@ fun SettingsScreen(
         )
     }
 
-    // To date picker
     if (showToDatePicker) {
         GymDatePickerDialog(
             title = "Backup to date",

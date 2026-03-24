@@ -81,18 +81,18 @@ class GymViewModel(application: Application) : AndroidViewModel(application) {
         val selectedDateStr = selectedDate.toString()
         val selectedDateSession = sessions.find { it.date == selectedDateStr }
 
-        // Membership calculations
         var daysRemaining: Int? = null
         var expiryDate: String? = null
         var progressFraction = 0f
         if (membershipStart != null) {
             val startDate = LocalDate.parse(membershipStart)
-            val expiry = startDate.plusDays(30)
+            val expiry = startDate.plusMonths(1)
             val now = LocalDate.now()
+            val totalDays = java.time.temporal.ChronoUnit.DAYS.between(startDate, expiry).toInt()
             daysRemaining = maxOf(0, java.time.temporal.ChronoUnit.DAYS.between(now, expiry).toInt())
             expiryDate = expiry.format(displayFormatter)
-            val elapsed = java.time.temporal.ChronoUnit.DAYS.between(startDate, now).toInt().coerceIn(0, 30)
-            progressFraction = elapsed / 30f
+            val elapsed = java.time.temporal.ChronoUnit.DAYS.between(startDate, now).toInt().coerceIn(0, totalDays)
+            progressFraction = elapsed / totalDays.toFloat()
         }
 
         GymUiState(
@@ -230,8 +230,8 @@ class GymViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     trimmed == "[sessions]" -> { section = "sessions" }
                     trimmed == "[ptPurchases]" -> { section = "ptPurchases" }
-                    trimmed.isEmpty() || trimmed.startsWith("#") -> { /* skip */ }
-                    trimmed.startsWith("date,") || trimmed.startsWith("month,") -> { /* skip headers */ }
+                    trimmed.isEmpty() || trimmed.startsWith("#") -> {}
+                    trimmed.startsWith("date,") || trimmed.startsWith("month,") -> {}
                     section == "sessions" -> {
                         val parts = trimmed.split(",", limit = 2)
                         if (parts.size == 2) {

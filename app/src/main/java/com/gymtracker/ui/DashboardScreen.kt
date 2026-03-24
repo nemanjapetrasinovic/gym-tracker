@@ -1,5 +1,7 @@
 package com.gymtracker.ui
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -15,6 +17,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -30,8 +35,6 @@ import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
-
-// ─── Dashboard Screen ─────────────────────────────────────────────────────────
 
 @Composable
 fun DashboardScreen(
@@ -49,7 +52,6 @@ fun DashboardScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Header
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
@@ -57,7 +59,7 @@ fun DashboardScreen(
             Icon(
                 imageVector = Icons.Default.FitnessCenter,
                 contentDescription = null,
-                tint = GymOrange,
+                tint = GymBlue,
                 modifier = Modifier.size(28.dp)
             )
             Spacer(Modifier.width(10.dp))
@@ -78,7 +80,6 @@ fun DashboardScreen(
             }
         }
 
-        // Membership Card
         MembershipCard(
             startDate = state.membershipStartDate,
             expiryDate = state.membershipExpiryDate,
@@ -87,7 +88,6 @@ fun DashboardScreen(
             onSetDate = { vm.setMembershipStartDate(it) }
         )
 
-        // Personal Training Card
         PersonalTrainingCard(
             purchased = state.personalTrainingsPurchased,
             used = state.personalTrainingsUsed,
@@ -97,7 +97,6 @@ fun DashboardScreen(
             onManagePurchases = onOpenSettings
         )
 
-        // Check-in Card
         CheckInCard(
             selectedDateSession = state.selectedDateSession,
             selectedDateFormatted = state.selectedDateFormatted,
@@ -113,7 +112,6 @@ fun DashboardScreen(
             onResetToToday = { vm.setSelectedDate(LocalDate.now()) }
         )
 
-        // Activity Heatmap
         ActivityHeatmap(
             sessions = state.allSessions,
             onDateClick = { vm.setSelectedDate(it) },
@@ -121,11 +119,11 @@ fun DashboardScreen(
             onEditSession = { date, isPt -> vm.updateSessionType(date, isPt) }
         )
 
+        SupportCard()
+
         Spacer(Modifier.height(16.dp))
     }
 }
-
-// ─── Membership Card ──────────────────────────────────────────────────────────
 
 @Composable
 fun MembershipCard(
@@ -144,7 +142,7 @@ fun MembershipCard(
         else                  -> GymGreen
     }
 
-    GymCard(icon = Icons.Default.CardMembership, title = "Membership", iconTint = GymOrange) {
+    GymCard(icon = Icons.Default.CardMembership, title = "Membership", iconTint = GymBlue) {
         if (startDate == null) {
             EmptyStateRow(
                 message = "No membership date set",
@@ -184,7 +182,6 @@ fun MembershipCard(
                     }
                 }
 
-                // Progress bar (elapsed, not remaining)
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     LinearProgressIndicator(
                         progress = { progressFraction },
@@ -236,8 +233,6 @@ fun MembershipCard(
     }
 }
 
-// ─── Personal Training Card ───────────────────────────────────────────────────
-
 @Composable
 fun PersonalTrainingCard(
     purchased: Int,
@@ -249,7 +244,7 @@ fun PersonalTrainingCard(
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
 
-    GymCard(icon = Icons.Default.Person, title = "Personal Trainings", iconTint = GymBlue) {
+    GymCard(icon = Icons.Default.Person, title = "Personal Trainings", iconTint = GymPurple) {
         if (purchased == 0) {
             EmptyStateRow(
                 message = "No personal trainings added",
@@ -271,7 +266,6 @@ fun PersonalTrainingCard(
                 )
             }
 
-            // Progress dots
             if (purchased > 0) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -283,7 +277,7 @@ fun PersonalTrainingCard(
                             modifier = Modifier
                                 .size(10.dp)
                                 .clip(CircleShape)
-                                .background(if (isUsed) GymYellow else GymBlue.copy(alpha = 0.35f))
+                                .background(if (isUsed) GymYellow else GymPurple.copy(alpha = 0.35f))
                         )
                     }
                     if (purchased > 20) {
@@ -356,8 +350,6 @@ fun PTStat(label: String, value: Int, color: Color, modifier: Modifier = Modifie
     }
 }
 
-// ─── Check-in Card ────────────────────────────────────────────────────────────
-
 @Composable
 fun CheckInCard(
     selectedDateSession: TrainingSession?,
@@ -374,7 +366,6 @@ fun CheckInCard(
     val alreadyCheckedIn = selectedDateSession != null
 
     GymCard(icon = Icons.Default.EditCalendar, title = "Log Training", iconTint = GymGreen) {
-        // Date selector row
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -411,7 +402,6 @@ fun CheckInCard(
             }
         }
 
-        // Calendar and Today buttons
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
@@ -444,7 +434,6 @@ fun CheckInCard(
         Spacer(Modifier.height(8.dp))
 
         if (alreadyCheckedIn) {
-            // Already checked in state
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -453,7 +442,7 @@ fun CheckInCard(
                     .background(GymGreen.copy(alpha = 0.12f))
                     .padding(14.dp)
             ) {
-                Text("✅", fontSize = 20.sp)
+                Text("\u2705", fontSize = 20.sp)
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -471,7 +460,6 @@ fun CheckInCard(
 
             Spacer(Modifier.height(10.dp))
 
-            // Switch type or undo
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 val switchLabel = if (selectedDateSession!!.isPersonalTraining) "Change to Regular" else "Change to PT"
                 OutlinedButton(
@@ -492,12 +480,11 @@ fun CheckInCard(
                 }
             }
         } else {
-            // Check-in buttons
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(
                     onClick = { onCheckIn(false) },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = GymOrange),
+                    colors = ButtonDefaults.buttonColors(containerColor = GymBlue),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Icon(Icons.Default.FitnessCenter, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -507,7 +494,7 @@ fun CheckInCard(
                 Button(
                     onClick = { onCheckIn(true) },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = GymBlue),
+                    colors = ButtonDefaults.buttonColors(containerColor = GymPurple),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -531,8 +518,6 @@ fun CheckInCard(
     }
 }
 
-// ─── Activity Heatmap ─────────────────────────────────────────────────────────
-
 @Composable
 fun ActivityHeatmap(
     sessions: List<TrainingSession>,
@@ -544,15 +529,11 @@ fun ActivityHeatmap(
     var showCalendar by remember { mutableStateOf(false) }
     var calendarMonth by remember { mutableStateOf(YearMonth.now()) }
 
-    // Build last 16 weeks (112 days) + align to week start (Monday)
     val today = LocalDate.now()
     val weeksToShow = 16
-    // Start from Monday weeksToShow weeks ago
     val startDate = today.minusWeeks(weeksToShow.toLong()).let { d ->
         d.minusDays(((d.dayOfWeek.value - 1) % 7).toLong())
     }
-
-    // End on Sunday of the current week so every column is full
     val endDate = today.let { d ->
         d.plusDays((7 - d.dayOfWeek.value).toLong())
     }
@@ -565,10 +546,8 @@ fun ActivityHeatmap(
         }
     }
 
-    // Group by week
     val weeks = allDays.chunked(7)
 
-    // Month labels
     val monthLabels = buildList {
         var lastMonth = -1
         weeks.forEachIndexed { idx, week ->
@@ -583,7 +562,6 @@ fun ActivityHeatmap(
     val dayLabels = listOf("Mon", "", "Wed", "", "Fri", "", "Sun")
 
     GymCard(icon = Icons.Default.CalendarMonth, title = "Activity", iconTint = GymYellow) {
-        // Legend
         Row(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             modifier = Modifier
@@ -601,17 +579,13 @@ fun ActivityHeatmap(
         val labelGap = 4.dp
         val spacing = 2.dp
         val weekCount = weeks.size
-        // availableWidth = fullWidth - dayLabelWidth - labelGap
-        // cellSize = (availableWidth - spacing * (weekCount - 1)) / weekCount
         BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(end = labelGap + spacing)) {
             val availableWidthDp = maxWidth - dayLabelWidth - labelGap
             val totalSpacing = spacing * (weekCount - 1)
             val cellSize = ((availableWidthDp - totalSpacing) / weekCount)
 
             Row(modifier = Modifier.fillMaxWidth()) {
-                // Day-of-week labels
                 Column(modifier = Modifier.padding(end = labelGap)) {
-                    // Match the month labels row height
                     Text(
                         text = "",
                         fontSize = 9.sp,
@@ -640,7 +614,6 @@ fun ActivityHeatmap(
                 }
 
                 Column(modifier = Modifier.weight(1f)) {
-                    // Month labels row
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(spacing)
@@ -665,7 +638,6 @@ fun ActivityHeatmap(
                         }
                     }
                     Spacer(Modifier.height(spacing))
-                    // Grid
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(spacing)
                     ) {
@@ -704,7 +676,6 @@ fun ActivityHeatmap(
             }
         }
 
-        // Summary stats
         val totalTrainings = sessions.size
         val ptCount = sessions.count { it.isPersonalTraining }
         val regularCount = totalTrainings - ptCount
@@ -719,7 +690,6 @@ fun ActivityHeatmap(
             MiniStat("PT", "$ptCount", HeatmapPT, Modifier.weight(1f))
         }
 
-        // Calendar toggle
         Spacer(Modifier.height(10.dp))
         TextButton(
             onClick = { showCalendar = !showCalendar },
@@ -782,8 +752,6 @@ fun MiniStat(label: String, value: String, color: Color, modifier: Modifier = Mo
     }
 }
 
-// ─── Training Calendar ───────────────────────────────────────────────────────
-
 @Composable
 fun TrainingCalendar(
     yearMonth: YearMonth,
@@ -795,14 +763,13 @@ fun TrainingCalendar(
 ) {
     val today = LocalDate.now()
     val daysInMonth = yearMonth.lengthOfMonth()
-    val firstDayOfWeek = yearMonth.atDay(1).dayOfWeek.value // 1=Mon .. 7=Sun
+    val firstDayOfWeek = yearMonth.atDay(1).dayOfWeek.value
     val monthFormatter = remember { DateTimeFormatter.ofPattern("MMMM yyyy", Locale.ENGLISH) }
     val sessionDialogFormatter = remember { DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", Locale.ENGLISH) }
     val canGoForward = yearMonth.isBefore(YearMonth.now())
     var tappedSessionDate by remember { mutableStateOf<LocalDate?>(null) }
 
     Column {
-        // Month navigation
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -833,7 +800,6 @@ fun TrainingCalendar(
 
         Spacer(Modifier.height(8.dp))
 
-        // Day-of-week headers
         val dayHeaders = listOf("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
         Row(modifier = Modifier.fillMaxWidth()) {
             dayHeaders.forEach { header ->
@@ -850,7 +816,6 @@ fun TrainingCalendar(
 
         Spacer(Modifier.height(4.dp))
 
-        // Calendar grid — always 6 rows for consistent height
         for (row in 0 until 6) {
             Row(modifier = Modifier.fillMaxWidth()) {
                 for (col in 0 until 7) {
@@ -922,7 +887,6 @@ fun TrainingCalendar(
             }
         }
 
-        // Legend reminder
         Spacer(Modifier.height(8.dp))
         Row(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -943,7 +907,6 @@ fun TrainingCalendar(
         }
     }
 
-    // Session action dialog
     var editingSessionDate by remember { mutableStateOf<LocalDate?>(null) }
 
     tappedSessionDate?.let { date ->
@@ -986,7 +949,6 @@ fun TrainingCalendar(
         }
     }
 
-    // Edit session type dialog
     editingSessionDate?.let { date ->
         val dateStr = date.toString()
         val session = sessionMap[dateStr]
@@ -1067,7 +1029,105 @@ fun TrainingCalendar(
     }
 }
 
-// ─── Reusable Components ──────────────────────────────────────────────────────
+@Composable
+fun SupportCard() {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    var copiedLabel by remember { mutableStateOf<String?>(null) }
+
+    val ethAddress = "0xa4d644491df24eae8732732218872e433d1add66"
+    val btcAddress = "bc1qmmjclsthfgexp2vl42909wzqvtmjruuvch6vgn"
+
+    GymCard(icon = Icons.Default.Favorite, title = "Buy Me a Coffee", iconTint = GymBlue) {
+        Button(
+            onClick = {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://paypal.me/nemanjapetrasinovic"))
+                context.startActivity(intent)
+            },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = GymBlue),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            @Suppress("DEPRECATION")
+            Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Support via PayPal", fontWeight = FontWeight.Bold)
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        Text(
+            text = "Or send crypto",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        CryptoAddressRow(
+            label = "ETH",
+            address = ethAddress,
+            isCopied = copiedLabel == "ETH",
+            onCopy = {
+                clipboardManager.setText(AnnotatedString(ethAddress))
+                copiedLabel = "ETH"
+            }
+        )
+
+        Spacer(Modifier.height(6.dp))
+
+        CryptoAddressRow(
+            label = "BTC",
+            address = btcAddress,
+            isCopied = copiedLabel == "BTC",
+            onCopy = {
+                clipboardManager.setText(AnnotatedString(btcAddress))
+                copiedLabel = "BTC"
+            }
+        )
+    }
+}
+
+@Composable
+private fun CryptoAddressRow(
+    label: String,
+    address: String,
+    isCopied: Boolean,
+    onCopy: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = address.take(10) + "..." + address.takeLast(6),
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        IconButton(onClick = onCopy, modifier = Modifier.size(32.dp)) {
+            Icon(
+                imageVector = if (isCopied) Icons.Default.Check else Icons.Default.ContentCopy,
+                contentDescription = "Copy $label address",
+                tint = if (isCopied) GymGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+    }
+}
 
 @Composable
 fun GymCard(
@@ -1125,8 +1185,6 @@ fun EmptyStateRow(message: String, actionLabel: String, onClick: () -> Unit) {
         }
     }
 }
-
-// ─── Dialogs ──────────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1255,8 +1313,6 @@ fun AddPtSessionsDialog(
         }
     )
 }
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 private fun formatDisplayDate(isoDate: String): String {
     return try {

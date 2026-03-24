@@ -5,21 +5,17 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
-// ─── Entities ─────────────────────────────────────────────────────────────────
-
 @Entity(tableName = "training_sessions")
 data class TrainingSession(
-    @PrimaryKey val date: String,          // ISO date string "2024-01-15"
+    @PrimaryKey val date: String,
     val isPersonalTraining: Boolean = false
 )
 
 @Entity(tableName = "pt_purchases")
 data class PtPurchase(
-    @PrimaryKey val month: String,  // "2026-03" ISO year-month
-    val count: Int                  // total purchased that month
+    @PrimaryKey val month: String,
+    val count: Int
 )
-
-// ─── DAOs ─────────────────────────────────────────────────────────────────────
 
 @Dao
 interface TrainingSessionDao {
@@ -77,8 +73,6 @@ interface PtPurchaseDao {
     suspend fun deleteAll()
 }
 
-// ─── Migration ────────────────────────────────────────────────────────────────
-
 val MIGRATION_1_2 = object : Migration(1, 2) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL(
@@ -89,8 +83,6 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
         )
     }
 }
-
-// ─── Database ─────────────────────────────────────────────────────────────────
 
 @Database(entities = [TrainingSession::class, PtPurchase::class], version = 2, exportSchema = false)
 abstract class GymDatabase : RoomDatabase() {
