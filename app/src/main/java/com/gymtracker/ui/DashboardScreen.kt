@@ -257,6 +257,8 @@ fun PersonalTrainingCard(
     var showAddDialog by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
     val hasAnyPt = available > 0 || used > 0
+    val remainingColor = if (remaining > 0) GymGreen else GymRed
+    val remainingLabel = if (remaining == 1) "session left" else "sessions left"
 
     GymCard(
         icon = Icons.Default.Person,
@@ -281,18 +283,34 @@ fun PersonalTrainingCard(
             )
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                    shape = RoundedCornerShape(16.dp),
+                    color = remainingColor.copy(alpha = 0.12f)
                 ) {
-                    PTStat(label = "Available", value = available, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
-                    PTStat(label = "Used", value = used, color = GymYellow, modifier = Modifier.weight(1f))
-                    PTStat(
-                        label = "Left",
-                        value = remaining,
-                        color = if (remaining == 0) GymRed else GymGreen,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 18.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = remaining.toString(),
+                            style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold),
+                            color = remainingColor
+                        )
+                        Text(
+                            text = remainingLabel,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "Used $used of $available available this month",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
 
                 Text(
@@ -363,31 +381,94 @@ private fun AddPtSessionsDialog(
     onConfirm: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var count by remember { mutableStateOf("") }
+    var count by remember { mutableStateOf("0") }
+    val countValue = count.toIntOrNull() ?: 0
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add Sessions") },
         text = {
-            OutlinedTextField(
-                value = count,
-                onValueChange = { if (it.all { c -> c.isDigit() } && it.length <= 3) count = it },
-                label = { Text("How many sessions did you buy?") },
-                supportingText = { Text("Add 1 for a single session or any larger bundle.") },
-                singleLine = true,
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth()
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                PtCountPicker(
+                    value = count,
+                    onValueChange = { count = sanitizePtCountInput(it) },
+                    label = "How many sessions did you buy?"
+                )
+                Text(
+                    text = "Add 1 for a single session or any larger bundle.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(count.toIntOrNull() ?: 0) },
-                enabled = count.toIntOrNull()?.let { it > 0 } == true
+                onClick = { onConfirm(countValue) },
+                enabled = countValue > 0
             ) { Text("Add") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
+}
+
+@Composable
+private fun PtCountPicker(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    val parsedValue = value.toIntOrNull() ?: 0
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FilledTonalIconButton(
+                onClick = { onValueChange((parsedValue - 1).coerceAtLeast(0).toString()) },
+                enabled = parsedValue > 0
+            ) {
+                Icon(Icons.Default.Remove, contentDescription = "Decrease session count")
+            }
+
+            OutlinedTextField(
+                value = value,
+                onValueChange = { onValueChange(sanitizePtCountInput(it)) },
+                singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                ),
+                modifier = Modifier.weight(1f)
+            )
+
+            FilledTonalIconButton(
+                onClick = { onValueChange((parsedValue + 1).coerceAtMost(999).toString()) }
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Increase session count")
+            }
+        }
+    }
+}
+
+private fun sanitizePtCountInput(input: String): String {
+    if (input.isEmpty()) return ""
+
+    return if (input.all { it.isDigit() } && input.length <= 3) {
+        input
+    } else {
+        input.filter { it.isDigit() }.take(3)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -399,7 +480,8 @@ private fun EditCurrentMonthPtDialog(
     onConfirm: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var count by remember { mutableStateOf(if (purchasedThisMonth > 0) purchasedThisMonth.toString() else "") }
+    var count by remember { mutableStateOf(purchasedThisMonth.toString()) }
+    val countValue = count.toIntOrNull() ?: 0
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(monthLabel) },
@@ -411,43 +493,20 @@ private fun EditCurrentMonthPtDialog(
                         Text("+$carriedOver carried over from last month", style = MaterialTheme.typography.bodySmall, color = GymPurple)
                     }
                 }
-                OutlinedTextField(
+                PtCountPicker(
                     value = count,
-                    onValueChange = { if (it.all { c -> c.isDigit() } && it.length <= 3) count = it },
-                    label = { Text("Sessions purchased this month") },
-                    singleLine = true,
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth()
+                    onValueChange = { count = sanitizePtCountInput(it) },
+                    label = "Sessions purchased this month"
                 )
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(count.toIntOrNull() ?: 0) }) { Text("Save") }
+            TextButton(onClick = { onConfirm(countValue) }) { Text("Save") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
-}
-
-@Composable
-fun PTStat(label: String, value: Int, color: Color, modifier: Modifier = Modifier, prefix: String = "") {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = "$prefix$value",
-            style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-            color = color
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
-        )
-    }
 }
 
 @Composable
