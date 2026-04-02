@@ -565,34 +565,63 @@ fun ActivityHeatmap(
 
     val today = LocalDate.now()
     val weeksToShow = 16
-    val startDate = today.minusWeeks(weeksToShow.toLong()).let { d ->
-        d.minusDays(((d.dayOfWeek.value - 1) % 7).toLong())
+    val fallbackStartDate = remember(today) {
+        today.minusWeeks(weeksToShow.toLong()).let { d ->
+            d.minusDays(((d.dayOfWeek.value - 1) % 7).toLong())
+        }
     }
-    val endDate = today.let { d ->
-        d.plusDays((7 - d.dayOfWeek.value).toLong())
+    val earliestSessionDate = remember(sessions) {
+        sessions.minOfOrNull { LocalDate.parse(it.date) }
+    }
+    val startDate = remember(earliestSessionDate, fallbackStartDate) {
+        val earliestAlignedWeek = earliestSessionDate?.let { firstSession ->
+            firstSession.minusDays(((firstSession.dayOfWeek.value - 1) % 7).toLong())
+        }
+        if (earliestAlignedWeek != null && earliestAlignedWeek.isBefore(fallbackStartDate)) {
+            earliestAlignedWeek
+        } else {
+            fallbackStartDate
+        }
+    }
+    val endDate = remember(today) {
+        today.plusDays((7 - today.dayOfWeek.value).toLong())
     }
 
-    val allDays = buildList {
-        var d = startDate
-        while (!d.isAfter(endDate)) {
-            add(d)
-            d = d.plusDays(1)
+    val allDays = remember(startDate, endDate) {
+        buildList {
+            var d = startDate
+            while (!d.isAfter(endDate)) {
+                add(d)
+                d = d.plusDays(1)
+            }
         }
     }
 
-    val weeks = allDays.chunked(7)
+    val weeks = remember(allDays) { allDays.chunked(7) }
 
-    val monthLabels = buildList {
-        var lastMonth = -1
-        weeks.forEachIndexed { idx, week ->
-            val month = week.first().monthValue
-            if (month != lastMonth) {
-                add(idx to week.first().month.getDisplayName(TextStyle.SHORT, Locale.ENGLISH))
-                lastMonth = month
+    val monthLabels = remember(weeks) {
+        buildMap {
+            var lastMonth = -1
+            weeks.forEachIndexed { idx, week ->
+                val month = week.first().monthValue
+                if (month != lastMonth) {
+                    put(idx, week.first().month.getDisplayName(TextStyle.SHORT, Locale.ENGLISH))
+                    lastMonth = month
+                }
             }
         }
     }
     val dayLabels = listOf("Mon", "", "Wed", "", "Fri", "", "Sun")
+    val heatmapScrollState = rememberScrollState()
+
+    LaunchedEffect(weeks.size) {
+        if (weeks.size > weeksToShow) {
+            repeat(2) { withFrameNanos { } }
+            heatmapScrollState.scrollTo(heatmapScrollState.maxValue)
+        } else if (heatmapScrollState.value != 0) {
+            heatmapScrollState.scrollTo(0)
+        }
+    }
 
     GymCard(icon = Icons.Default.CalendarMonth, title = "Activity", iconTint = GymYellow) {
         Row(
@@ -611,11 +640,13 @@ fun ActivityHeatmap(
         val dayLabelWidth = 26.dp
         val labelGap = 4.dp
         val spacing = 2.dp
-        val weekCount = weeks.size
+        val viewportWeekCount = weeksToShow
+        val totalWeekCount = weeks.size
         BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(end = labelGap + spacing)) {
             val availableWidthDp = maxWidth - dayLabelWidth - labelGap
-            val totalSpacing = spacing * (weekCount - 1)
-            val cellSize = ((availableWidthDp - totalSpacing) / weekCount)
+            val viewportSpacing = spacing * (viewportWeekCount - 1)
+            val cellSize = ((availableWidthDp - viewportSpacing) / viewportWeekCount)
+            val contentWidth = cellSize * totalWeekCount + spacing * (totalWeekCount - 1).coerceAtLeast(0)
 
             Row(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(end = labelGap)) {
@@ -646,61 +677,68 @@ fun ActivityHeatmap(
                     }
                 }
 
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(spacing)
-                    ) {
-                        weeks.forEachIndexed { idx, _ ->
-                            val label = monthLabels.find { it.first == idx }?.second ?: ""
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .graphicsLayer(clip = false)
-                            ) {
-                                Text(
-                                    text = label,
-                                    fontSize = 9.sp,
-                                    lineHeight = 9.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    textAlign = TextAlign.Start,
-                                    softWrap = false,
-                                    overflow = TextOverflow.Visible
-                                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .horizontalScroll(heatmapScrollState)
+                ) {
+                    Column(modifier = Modifier.width(contentWidth)) {
+                        Row(
+                            modifier = Modifier.width(contentWidth),
+                            horizontalArrangement = Arrangement.spacedBy(spacing)
+                        ) {
+                            weeks.forEachIndexed { idx, _ ->
+                                val label = monthLabels[idx] ?: ""
+                                Box(
+                                    modifier = Modifier
+                                        .width(cellSize)
+                                        .graphicsLayer(clip = false)
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 9.sp,
+                                        lineHeight = 9.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Start,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Visible
+                                    )
+                                }
                             }
                         }
-                    }
-                    Spacer(Modifier.height(spacing))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(spacing)
-                    ) {
-                        weeks.forEach { week ->
-                            Column(
-                                verticalArrangement = Arrangement.spacedBy(spacing)
-                            ) {
-                                repeat(7) { dayOfWeek ->
-                                    val date = week.getOrNull(dayOfWeek)
-                                    val session = date?.let { sessionMap[it.toString()] }
-                                    val isFuture = date?.isAfter(today) ?: true
-                                    val emptyColor = MaterialTheme.colorScheme.surfaceVariant
-                                    val cellColor = when {
-                                        date == null -> Color.Transparent
-                                        isFuture -> emptyColor.copy(alpha = 0.4f)
-                                        session?.isPersonalTraining == true -> HeatmapPT
-                                        session != null -> HeatmapRegular
-                                        else -> emptyColor
+                        Spacer(Modifier.height(spacing))
+                        Row(
+                            modifier = Modifier.width(contentWidth),
+                            horizontalArrangement = Arrangement.spacedBy(spacing)
+                        ) {
+                            weeks.forEach { week ->
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(spacing)
+                                ) {
+                                    repeat(7) { dayOfWeek ->
+                                        val date = week.getOrNull(dayOfWeek)
+                                        val session = date?.let { sessionMap[it.toString()] }
+                                        val isFuture = date?.isAfter(today) ?: true
+                                        val emptyColor = MaterialTheme.colorScheme.surfaceVariant
+                                        val cellColor = when {
+                                            date == null -> Color.Transparent
+                                            isFuture -> emptyColor.copy(alpha = 0.4f)
+                                            session?.isPersonalTraining == true -> HeatmapPT
+                                            session != null -> HeatmapRegular
+                                            else -> emptyColor
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .size(cellSize)
+                                                .clip(RoundedCornerShape(2.dp))
+                                                .background(cellColor)
+                                                .then(
+                                                    if (date != null && !isFuture) {
+                                                        Modifier.clickable { pendingDate = date }
+                                                    } else Modifier
+                                                )
+                                        )
                                     }
-                                    Box(
-                                        modifier = Modifier
-                                            .size(cellSize)
-                                            .clip(RoundedCornerShape(2.dp))
-                                            .background(cellColor)
-                                            .then(
-                                                if (date != null && !isFuture) {
-                                                    Modifier.clickable { pendingDate = date }
-                                                } else Modifier
-                                            )
-                                    )
                                 }
                             }
                         }
