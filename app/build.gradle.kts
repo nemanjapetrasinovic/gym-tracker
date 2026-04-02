@@ -60,4 +60,5 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended:1.7.5")
 
     debugImplementation(libs.androidx.ui.tooling)
+    testImplementation("junit:junit:4.13.2")
 }
