@@ -816,20 +816,24 @@ fun TrainingCalendar(
         visibleMonth = yearMonth
     }
 
-    fun animateMonthChange(targetMonth: YearMonth, targetOffsetPx: Float) {
+    fun animateMonthChange(
+        targetMonth: YearMonth,
+        targetOffsetPx: Float,
+        initialOffsetPx: Float = 0f
+    ) {
         if (isAnimating || targetMonth == yearMonth || targetMonth.isAfter(currentMonth)) return
         visibleMonth = targetMonth
         isAnimating = true
         scope.launch {
             animatedOffsetPx.stop()
-            dragOffsetPx = 0f
             isDragging = false
-            animatedOffsetPx.snapTo(0f)
+            animatedOffsetPx.snapTo(initialOffsetPx)
             animatedOffsetPx.animateTo(
                 targetValue = targetOffsetPx,
                 animationSpec = tween(durationMillis = 220)
             )
             onMonthChange(targetMonth)
+            dragOffsetPx = 0f
             animatedOffsetPx.snapTo(0f)
             isAnimating = false
         }
@@ -893,6 +897,7 @@ fun TrainingCalendar(
                     if (calendarWidthPx <= 0f || isAnimating) return@pointerInput
                     detectHorizontalDragGestures(
                         onDragStart = {
+                            if (isAnimating) return@detectHorizontalDragGestures
                             isDragging = true
                             scope.launch {
                                 animatedOffsetPx.stop()
@@ -912,20 +917,30 @@ fun TrainingCalendar(
                                 else -> 0f
                             }
 
-                            scope.launch {
-                                animatedOffsetPx.stop()
-                                animatedOffsetPx.snapTo(dragOffsetPx)
-                                isDragging = false
-                                animatedOffsetPx.animateTo(
-                                    targetValue = targetOffsetPx,
-                                    animationSpec = tween(durationMillis = 220)
+                            if (targetMonth != null) {
+                                animateMonthChange(
+                                    targetMonth = targetMonth,
+                                    targetOffsetPx = targetOffsetPx,
+                                    initialOffsetPx = dragOffsetPx
                                 )
-                                targetMonth?.let(onMonthChange)
-                                dragOffsetPx = 0f
-                                animatedOffsetPx.snapTo(0f)
+                            } else {
+                                isAnimating = true
+                                scope.launch {
+                                    animatedOffsetPx.stop()
+                                    animatedOffsetPx.snapTo(dragOffsetPx)
+                                    isDragging = false
+                                    animatedOffsetPx.animateTo(
+                                        targetValue = 0f,
+                                        animationSpec = tween(durationMillis = 220)
+                                    )
+                                    dragOffsetPx = 0f
+                                    animatedOffsetPx.snapTo(0f)
+                                    isAnimating = false
+                                }
                             }
                         },
                         onDragCancel = {
+                            isAnimating = true
                             scope.launch {
                                 animatedOffsetPx.stop()
                                 animatedOffsetPx.snapTo(dragOffsetPx)
@@ -935,6 +950,8 @@ fun TrainingCalendar(
                                     animationSpec = tween(durationMillis = 220)
                                 )
                                 dragOffsetPx = 0f
+                                animatedOffsetPx.snapTo(0f)
+                                isAnimating = false
                             }
                         }
                     ) { change, dragAmount ->
