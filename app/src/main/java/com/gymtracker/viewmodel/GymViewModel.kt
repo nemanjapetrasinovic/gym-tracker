@@ -24,13 +24,13 @@ enum class Screen { Dashboard, Settings }
 enum class PtCarrySource { None, Derived, Manual }
 
 data class PtMonthBreakdown(
-    val month: String,      // "YYYY-MM"
+    val month: String,
     val purchased: Int,
     val carriedIn: Int,
     val available: Int,
     val used: Int,
     val overused: Int,
-    val carriedOut: Int,     // max(0, purchased + carriedIn - used)
+    val carriedOut: Int,
     val manualCarrySeed: Int? = null,
     val hasPreviousHistory: Boolean = false,
     val carrySource: PtCarrySource = PtCarrySource.None,
