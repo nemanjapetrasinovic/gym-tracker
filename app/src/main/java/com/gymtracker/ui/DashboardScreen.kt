@@ -800,16 +800,26 @@ fun TrainingCalendar(
     onEditSession: (String, Boolean) -> Unit
 ) {
     val today = LocalDate.now()
+    val currentMonth = remember { YearMonth.now() }
     val monthFormatter = remember { DateTimeFormatter.ofPattern("MMMM yyyy", Locale.ENGLISH) }
-    val canGoForward = yearMonth.isBefore(YearMonth.now())
     var pendingDate by remember { mutableStateOf<LocalDate?>(null) }
+    var visibleMonth by remember { mutableStateOf(yearMonth) }
     val scope = rememberCoroutineScope()
     val animatedOffsetPx = remember(yearMonth) { Animatable(0f) }
     var dragOffsetPx by remember(yearMonth) { mutableFloatStateOf(0f) }
     var isDragging by remember { mutableStateOf(false) }
+    var isAnimating by remember { mutableStateOf(false) }
     var calendarWidthPx by remember { mutableFloatStateOf(0f) }
+    val canGoForward = visibleMonth.isBefore(currentMonth)
+
+    LaunchedEffect(yearMonth) {
+        visibleMonth = yearMonth
+    }
 
     fun animateMonthChange(targetMonth: YearMonth, targetOffsetPx: Float) {
+        if (isAnimating || targetMonth == yearMonth || targetMonth.isAfter(currentMonth)) return
+        visibleMonth = targetMonth
+        isAnimating = true
         scope.launch {
             animatedOffsetPx.stop()
             dragOffsetPx = 0f
@@ -821,6 +831,17 @@ fun TrainingCalendar(
             )
             onMonthChange(targetMonth)
             animatedOffsetPx.snapTo(0f)
+            isAnimating = false
+        }
+    }
+
+    fun requestMonthChange(targetMonth: YearMonth, targetOffsetPx: Float) {
+        if (isAnimating || targetMonth == yearMonth || targetMonth.isAfter(currentMonth)) return
+        if (calendarWidthPx > 0f) {
+            animateMonthChange(targetMonth, targetOffsetPx)
+        } else {
+            visibleMonth = targetMonth
+            onMonthChange(targetMonth)
         }
     }
 
@@ -832,31 +853,24 @@ fun TrainingCalendar(
         ) {
             IconButton(
                 onClick = {
-                    if (calendarWidthPx > 0f) {
-                        animateMonthChange(yearMonth.minusMonths(1), calendarWidthPx)
-                    } else {
-                        onMonthChange(yearMonth.minusMonths(1))
-                    }
+                    requestMonthChange(yearMonth.minusMonths(1), calendarWidthPx)
                 },
+                enabled = !isAnimating,
                 modifier = Modifier.size(36.dp)
             ) {
                 Icon(Icons.Default.ChevronLeft, contentDescription = "Previous month", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(
-                text = yearMonth.format(monthFormatter),
+                text = visibleMonth.format(monthFormatter),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
             IconButton(
                 onClick = {
-                    if (calendarWidthPx > 0f) {
-                        animateMonthChange(yearMonth.plusMonths(1), -calendarWidthPx)
-                    } else {
-                        onMonthChange(yearMonth.plusMonths(1))
-                    }
+                    requestMonthChange(yearMonth.plusMonths(1), -calendarWidthPx)
                 },
-                enabled = canGoForward,
+                enabled = canGoForward && !isAnimating,
                 modifier = Modifier.size(36.dp)
             ) {
                 Icon(
@@ -875,8 +889,8 @@ fun TrainingCalendar(
                 .fillMaxWidth()
                 .onSizeChanged { calendarWidthPx = it.width.toFloat() }
                 .clipToBounds()
-                .pointerInput(yearMonth, canGoForward, calendarWidthPx) {
-                    if (calendarWidthPx <= 0f) return@pointerInput
+                .pointerInput(yearMonth, canGoForward, calendarWidthPx, isAnimating) {
+                    if (calendarWidthPx <= 0f || isAnimating) return@pointerInput
                     detectHorizontalDragGestures(
                         onDragStart = {
                             isDragging = true
