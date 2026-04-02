@@ -1,7 +1,7 @@
 package com.gymtracker.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,8 +19,14 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.gymtracker.data.PtPurchase
+import com.gymtracker.ui.GymBlue
+import com.gymtracker.ui.GymGreen
+import com.gymtracker.ui.GymPurple
+import com.gymtracker.ui.GymRed
+import com.gymtracker.ui.GymYellow
+import com.gymtracker.viewmodel.PtCarrySource
 import com.gymtracker.viewmodel.GymViewModel
+import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
@@ -37,11 +43,31 @@ fun SettingsScreen(
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     var showRestoreConfirm by remember { mutableStateOf(false) }
-    var editingPurchase by remember { mutableStateOf<PtPurchase?>(null) }
     var showBackupChoice by remember { mutableStateOf(false) }
     var showFromDatePicker by remember { mutableStateOf(false) }
     var showToDatePicker by remember { mutableStateOf(false) }
+    var showPtMonthPicker by remember { mutableStateOf(false) }
     var pendingFromDate by remember { mutableStateOf("") }
+    val selectedPtMonth = YearMonth.parse(state.ptEditorMonth)
+    val canGoForward = selectedPtMonth.isBefore(YearMonth.now())
+    val selectedEntry = state.ptSelectedMonthBreakdown
+    val monthLabel = selectedPtMonth.month.getDisplayName(TextStyle.FULL, Locale.ENGLISH) + " " + selectedPtMonth.year
+    var purchasedInput by remember(selectedEntry?.month, selectedEntry?.purchased) {
+        mutableStateOf(
+            when (val purchased = selectedEntry?.purchased ?: 0) {
+                0 -> ""
+                else -> purchased.toString()
+            }
+        )
+    }
+    var carryInput by remember(selectedEntry?.month, selectedEntry?.manualCarrySeed) {
+        mutableStateOf(
+            when (val carry = selectedEntry?.manualCarrySeed ?: 0) {
+                0 -> ""
+                else -> carry.toString()
+            }
+        )
+    }
 
     Column(
         modifier = modifier
@@ -121,58 +147,50 @@ fun SettingsScreen(
             )
         }
 
-        GymCard(icon = Icons.Default.Person, title = "Personal Training Purchases", iconTint = GymPurple) {
-            if (state.ptMonthlyBreakdown.isEmpty()) {
-                Text(
-                    text = "No purchases recorded yet. Add your monthly PT purchases to track usage.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-            } else {
-                state.ptMonthlyBreakdown.forEach { entry ->
-                    val ym = YearMonth.parse(entry.month)
-                    val monthLabel = "${ym.month.getDisplayName(TextStyle.FULL, Locale.ENGLISH)} ${ym.year}"
-                    val hasPurchase = entry.purchased > 0
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 3.dp)
-                            .then(
-                                if (hasPurchase) Modifier.clickable {
-                                    editingPurchase = state.ptPurchases.find { it.month == entry.month }
-                                        ?: com.gymtracker.data.PtPurchase(entry.month, 0)
-                                } else Modifier
-                            )
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = monthLabel,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Text(
-                                text = "${entry.purchased} bought · ${entry.used} used · ${entry.carriedOut} left",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            if (hasPurchase) {
-                                Spacer(Modifier.width(8.dp))
-                                Icon(Icons.Default.Edit, contentDescription = "Edit", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    }
+        GymCard(icon = Icons.Default.Person, title = "PT Session Editor", iconTint = GymPurple) {
+            Text(
+                text = "Edit one month at a time. Set purchased sessions for the month and seed carried sessions when earlier history is missing.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                IconButton(
+                    onClick = { vm.setSelectedPtEditorMonth(selectedPtMonth.minusMonths(1)) },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(Icons.Default.ChevronLeft, contentDescription = "Previous month", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
 
-                Spacer(Modifier.height(10.dp))
+                TextButton(onClick = { showPtMonthPicker = true }) {
+                    Text(monthLabel, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                    Spacer(Modifier.width(6.dp))
+                    Icon(Icons.Default.CalendarMonth, contentDescription = "Pick month", modifier = Modifier.size(16.dp))
+                }
 
+                IconButton(
+                    onClick = { vm.setSelectedPtEditorMonth(selectedPtMonth.plusMonths(1)) },
+                    enabled = canGoForward,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        Icons.Default.ChevronRight,
+                        contentDescription = "Next month",
+                        tint = if (canGoForward) MaterialTheme.colorScheme.onSurfaceVariant
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            if (selectedEntry != null) {
                 Surface(
                     shape = RoundedCornerShape(10.dp),
                     color = GymPurple.copy(alpha = 0.1f),
@@ -183,17 +201,152 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        SummaryStat("Total", state.personalTrainingsPurchased, MaterialTheme.colorScheme.onSurface)
-                        SummaryStat("Used", state.personalTrainingsUsed, GymYellow)
+                        SummaryStat("Available", selectedEntry.available, MaterialTheme.colorScheme.onSurface)
+                        SummaryStat("Used", selectedEntry.used, GymYellow)
                         SummaryStat(
-                            "Remaining",
-                            state.personalTrainingsRemaining,
-                            if (state.personalTrainingsRemaining == 0) GymRed else GymGreen
+                            "Left",
+                            selectedEntry.carriedOut,
+                            if (selectedEntry.carriedOut == 0) GymRed else GymGreen
                         )
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = purchasedInput,
+                    onValueChange = { if (it.all { c -> c.isDigit() } && it.length <= 3) purchasedInput = it },
+                    label = { Text("Purchased this month") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                val carryFieldValue = if (selectedEntry.hasPreviousHistory) {
+                    selectedEntry.carriedIn.toString()
+                } else {
+                    carryInput
+                }
+                OutlinedTextField(
+                    value = carryFieldValue,
+                    onValueChange = { if (it.all { c -> c.isDigit() } && it.length <= 3) carryInput = it },
+                    label = { Text("Carried in") },
+                    singleLine = true,
+                    enabled = !selectedEntry.hasPreviousHistory,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(Modifier.height(6.dp))
+
+                val carrySourceText = when (selectedEntry.carrySource) {
+                    PtCarrySource.Manual -> "Manual starting carry"
+                    PtCarrySource.Derived -> "Derived from earlier history"
+                    PtCarrySource.None -> if (selectedEntry.hasPreviousHistory) "No carry from earlier history" else "No manual carry set"
+                }
+                Text(
+                    text = carrySourceText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (selectedEntry.carrySource == PtCarrySource.Manual) GymPurple else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (selectedEntry.hasPreviousHistory) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Carry is locked for this month because earlier app history determines it.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Use this when you know the carry for a month but earlier records were never added to the app.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                if (selectedEntry.manualCarryIgnored) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "A saved manual carry exists for this month, but it is ignored because earlier history now takes over.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = GymRed
+                    )
+                }
+
+                if (selectedEntry.overused > 0) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = "Overused by ${selectedEntry.overused} session" + if (selectedEntry.overused == 1) "" else "s",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = GymRed
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = {
+                            vm.setPtPurchaseForMonth(selectedEntry.month, purchasedInput.toIntOrNull() ?: 0)
+                            if (!selectedEntry.hasPreviousHistory) {
+                                vm.setPtCarrySeedForMonth(selectedEntry.month, carryInput.toIntOrNull() ?: 0)
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = GymPurple),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Save Month", fontWeight = FontWeight.Bold)
+                    }
+
+                    if (selectedEntry.manualCarrySeed != null) {
+                        OutlinedButton(
+                            onClick = { vm.setPtCarrySeedForMonth(selectedEntry.month, 0) },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = GymRed),
+                            border = BorderStroke(1.dp, GymRed.copy(alpha = 0.5f))
+                        ) {
+                            Text("Clear Carry")
+                        }
                     }
                 }
             }
 
+            Spacer(Modifier.height(12.dp))
+
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SummaryStat("Total", state.personalTrainingsPurchased, MaterialTheme.colorScheme.onSurface)
+                    SummaryStat("Used", state.personalTrainingsUsed, GymYellow)
+                    SummaryStat(
+                        "Left Now",
+                        state.ptRemainingThisMonth,
+                        if (state.ptRemainingThisMonth == 0) GymRed else GymGreen
+                    )
+                }
+            }
+
+            if (state.ptTotalOverused > 0) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Overused by ${state.ptTotalOverused} session" + if (state.ptTotalOverused == 1) "" else "s" +
+                        " across the visible history. Correct the affected month or seed an earlier carry month.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GymRed
+                )
+            }
         }
 
         Spacer(Modifier.height(16.dp))
@@ -213,21 +366,6 @@ fun SettingsScreen(
             dismissButton = {
                 TextButton(onClick = { showRestoreConfirm = false }) { Text("Cancel") }
             }
-        )
-    }
-
-    editingPurchase?.let { purchase ->
-        EditPurchaseDialog(
-            purchase = purchase,
-            onConfirm = { count ->
-                vm.setPtPurchaseForMonth(purchase.month, count)
-                editingPurchase = null
-            },
-            onDelete = {
-                vm.setPtPurchaseForMonth(purchase.month, 0)
-                editingPurchase = null
-            },
-            onDismiss = { editingPurchase = null }
         )
     }
 
@@ -273,6 +411,18 @@ fun SettingsScreen(
             onDismiss = { showToDatePicker = false }
         )
     }
+
+    if (showPtMonthPicker) {
+        GymDatePickerDialog(
+            title = "Jump to month",
+            maxDateMillis = System.currentTimeMillis(),
+            onConfirm = { date ->
+                vm.setSelectedPtEditorMonth(YearMonth.from(LocalDate.parse(date)))
+                showPtMonthPicker = false
+            },
+            onDismiss = { showPtMonthPicker = false }
+        )
+    }
 }
 
 @Composable
@@ -289,41 +439,4 @@ private fun SummaryStat(label: String, value: Int, color: androidx.compose.ui.gr
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun EditPurchaseDialog(
-    purchase: PtPurchase,
-    onConfirm: (Int) -> Unit,
-    onDelete: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    var count by remember { mutableStateOf(purchase.count.toString()) }
-    val ym = YearMonth.parse(purchase.month)
-    val label = "${ym.month.getDisplayName(TextStyle.FULL, Locale.ENGLISH)} ${ym.year}"
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Edit: $label") },
-        text = {
-            OutlinedTextField(
-                value = count,
-                onValueChange = { if (it.all { c -> c.isDigit() } && it.length <= 3) count = it },
-                label = { Text("Number of sessions") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth()
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(count.toIntOrNull() ?: 0) }) { Text("Save") }
-        },
-        dismissButton = {
-            Row {
-                TextButton(onClick = { onDelete(); onDismiss() }) { Text("Delete", color = GymRed) }
-                TextButton(onClick = onDismiss) { Text("Cancel") }
-            }
-        }
-    )
 }

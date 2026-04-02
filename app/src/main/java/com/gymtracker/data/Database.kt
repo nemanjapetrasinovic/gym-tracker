@@ -17,6 +17,12 @@ data class PtPurchase(
     val count: Int
 )
 
+@Entity(tableName = "pt_carry_seeds")
+data class PtCarrySeed(
+    @PrimaryKey val month: String,
+    val count: Int
+)
+
 data class MonthCount(val month: String, val count: Int)
 
 @Dao
@@ -78,6 +84,31 @@ interface PtPurchaseDao {
     suspend fun deleteAll()
 }
 
+@Dao
+interface PtCarrySeedDao {
+
+    @Query("SELECT * FROM pt_carry_seeds ORDER BY month DESC")
+    fun getAllCarrySeeds(): Flow<List<PtCarrySeed>>
+
+    @Query("SELECT * FROM pt_carry_seeds ORDER BY month DESC")
+    suspend fun getAllCarrySeedsOnce(): List<PtCarrySeed>
+
+    @Query("SELECT * FROM pt_carry_seeds WHERE month = :month LIMIT 1")
+    suspend fun getCarrySeedByMonth(month: String): PtCarrySeed?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertCarrySeed(seed: PtCarrySeed)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(seeds: List<PtCarrySeed>)
+
+    @Query("DELETE FROM pt_carry_seeds WHERE month = :month")
+    suspend fun deleteByMonth(month: String)
+
+    @Query("DELETE FROM pt_carry_seeds")
+    suspend fun deleteAll()
+}
+
 val MIGRATION_1_2 = object : Migration(1, 2) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL(
@@ -89,8 +120,24 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
-@Database(entities = [TrainingSession::class, PtPurchase::class], version = 2, exportSchema = false)
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `pt_carry_seeds` (" +
+                "`month` TEXT NOT NULL, " +
+                "`count` INTEGER NOT NULL, " +
+                "PRIMARY KEY(`month`))"
+        )
+    }
+}
+
+@Database(
+    entities = [TrainingSession::class, PtPurchase::class, PtCarrySeed::class],
+    version = 3,
+    exportSchema = false
+)
 abstract class GymDatabase : RoomDatabase() {
     abstract fun trainingSessionDao(): TrainingSessionDao
     abstract fun ptPurchaseDao(): PtPurchaseDao
+    abstract fun ptCarrySeedDao(): PtCarrySeedDao
 }

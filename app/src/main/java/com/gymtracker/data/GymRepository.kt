@@ -7,6 +7,7 @@ import java.time.YearMonth
 class GymRepository(
     private val dao: TrainingSessionDao,
     private val ptDao: PtPurchaseDao,
+    private val ptCarrySeedDao: PtCarrySeedDao,
     private val prefs: GymPreferences
 ) {
     val allSessions: Flow<List<TrainingSession>> = dao.getAllSessions()
@@ -14,6 +15,7 @@ class GymRepository(
     val membershipStartDate: Flow<String?> = prefs.membershipStartDate
     val totalPtPurchased: Flow<Int> = ptDao.getTotalPurchased().map { it ?: 0 }
     val allPtPurchases: Flow<List<PtPurchase>> = ptDao.getAllPurchases()
+    val allPtCarrySeeds: Flow<List<PtCarrySeed>> = ptCarrySeedDao.getAllCarrySeeds()
     val lastBackupTimestamp: Flow<Long?> = prefs.lastBackupTimestamp
     val ptUsedByMonth: Flow<List<MonthCount>> = dao.getPtUsedByMonth()
 
@@ -61,20 +63,34 @@ class GymRepository(
         ptDao.upsertPurchase(PtPurchase(month = month, count = newTotal))
     }
 
+    suspend fun setPtCarrySeedForMonth(month: String, count: Int) {
+        if (count <= 0) {
+            ptCarrySeedDao.deleteByMonth(month)
+        } else {
+            ptCarrySeedDao.upsertCarrySeed(PtCarrySeed(month = month, count = count))
+        }
+    }
+
     suspend fun getAllSessionsOnce(): List<TrainingSession> = dao.getAllSessionsOnce()
     suspend fun getAllPtPurchasesOnce(): List<PtPurchase> = ptDao.getAllPurchasesOnce()
+    suspend fun getAllPtCarrySeedsOnce(): List<PtCarrySeed> = ptCarrySeedDao.getAllCarrySeedsOnce()
 
     suspend fun restoreData(
         sessions: List<TrainingSession>,
         purchases: List<PtPurchase>,
+        carrySeeds: List<PtCarrySeed>,
         membershipStart: String?
     ) {
         dao.deleteAll()
         ptDao.deleteAll()
+        ptCarrySeedDao.deleteAll()
         dao.insertAll(sessions)
         ptDao.insertAll(purchases)
+        ptCarrySeedDao.insertAll(carrySeeds)
         if (membershipStart != null) {
             prefs.setMembershipStartDate(membershipStart)
+        } else {
+            prefs.clearMembershipStartDate()
         }
     }
 

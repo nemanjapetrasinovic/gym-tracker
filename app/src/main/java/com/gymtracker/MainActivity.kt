@@ -56,12 +56,14 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri ?: return@registerForActivityResult
-        try {
-            val csv = contentResolver.openInputStream(uri)?.bufferedReader()?.readText() ?: return@registerForActivityResult
-            vm.restoreFromCsv(csv)
-            Toast.makeText(this, "Data restored", Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) {
-            Toast.makeText(this, "Restore failed: ${e.message}", Toast.LENGTH_LONG).show()
+        lifecycleScope.launch {
+            try {
+                val csv = contentResolver.openInputStream(uri)?.bufferedReader()?.readText() ?: return@launch
+                vm.restoreFromCsv(csv)
+                Toast.makeText(this@MainActivity, "Data restored", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity, "Restore failed: ${e.message}", Toast.LENGTH_LONG).show()
+            }
         }
     }
 

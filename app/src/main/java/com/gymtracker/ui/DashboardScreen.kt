@@ -4,37 +4,54 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gymtracker.data.PtPurchase
 import com.gymtracker.data.TrainingSession
+import com.gymtracker.ui.GymBlue
+import com.gymtracker.ui.GymGreen
+import com.gymtracker.ui.GymPurple
+import com.gymtracker.ui.GymRed
+import com.gymtracker.ui.GymYellow
+import com.gymtracker.ui.HeatmapPT
+import com.gymtracker.ui.HeatmapRegular
 import com.gymtracker.viewmodel.GymViewModel
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 @Composable
 fun DashboardScreen(
@@ -89,31 +106,24 @@ fun DashboardScreen(
         )
 
         PersonalTrainingCard(
+            available = state.ptAvailableThisMonth,
+            used = state.ptUsedThisMonth,
+            remaining = state.ptRemainingThisMonth,
             purchasedThisMonth = state.ptPurchasedThisMonth,
             carriedOver = state.ptCarriedOver,
-            used = state.personalTrainingsUsed,
-            remaining = state.personalTrainingsRemaining,
+            overused = state.ptOverusedThisMonth,
+            onAddPurchased = { vm.addPtPurchase(it) },
             onSetPurchased = { vm.setPtPurchaseForMonth(YearMonth.now().toString(), it) }
         )
 
         CheckInCard(
-            selectedDateSession = state.selectedDateSession,
-            selectedDateFormatted = state.selectedDateFormatted,
-            isSelectedDateToday = state.isSelectedDateToday,
+            todaySession = state.todaySession,
             onCheckIn = { isPersonal -> vm.checkIn(isPersonal) },
-            onRemoveSession = { vm.removeSession() },
-            onPreviousDay = { vm.setSelectedDate(LocalDate.parse(state.selectedDate).minusDays(1)) },
-            onNextDay = {
-                val next = LocalDate.parse(state.selectedDate).plusDays(1)
-                if (!next.isAfter(LocalDate.now())) vm.setSelectedDate(next)
-            },
-            onSelectDate = { vm.setSelectedDate(it) },
-            onResetToToday = { vm.setSelectedDate(LocalDate.now()) }
+            onRemoveSession = { vm.removeSession() }
         )
 
         ActivityHeatmap(
             sessions = state.allSessions,
-            onDateClick = { vm.setSelectedDate(it) },
             onLogSession = { date, isPt -> vm.checkInForDate(date, isPt) },
             onDeleteSession = { vm.removeSessionForDate(it) },
             onEditSession = { date, isPt -> vm.updateSessionType(date, isPt) }
@@ -235,14 +245,18 @@ fun MembershipCard(
 
 @Composable
 fun PersonalTrainingCard(
-    purchasedThisMonth: Int,
-    carriedOver: Int,
+    available: Int,
     used: Int,
     remaining: Int,
+    purchasedThisMonth: Int,
+    carriedOver: Int,
+    overused: Int,
+    onAddPurchased: (Int) -> Unit,
     onSetPurchased: (Int) -> Unit
 ) {
+    var showAddDialog by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
-    val hasAnyPt = purchasedThisMonth > 0 || carriedOver > 0
+    val hasAnyPt = available > 0 || used > 0
 
     GymCard(
         icon = Icons.Default.Person,
@@ -250,27 +264,84 @@ fun PersonalTrainingCard(
         iconTint = GymPurple,
         action = {
             IconButton(onClick = { showEditDialog = true }, modifier = Modifier.size(32.dp)) {
-                Icon(Icons.Default.Edit, contentDescription = "Edit PT", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                Icon(
+                    Icons.Default.Edit,
+                    contentDescription = "Adjust month total",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
+                )
             }
         }
     ) {
         if (!hasAnyPt) {
             EmptyStateRow(
                 message = "No personal trainings added",
-                actionLabel = "Add PT",
-                onClick = { showEditDialog = true }
+                actionLabel = "Add Sessions",
+                onClick = { showAddDialog = true }
             )
         } else {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                PTStat(label = "This month", value = purchasedThisMonth, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
-                PTStat(label = "Carried", value = carriedOver, color = GymPurple, prefix = if (carriedOver > 0) "+" else "", modifier = Modifier.weight(1f))
-                PTStat(label = "Used", value = used, color = GymYellow, modifier = Modifier.weight(1f))
-                PTStat(label = "Remaining", value = remaining, color = if (remaining == 0) GymRed else GymGreen, modifier = Modifier.weight(1f))
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    PTStat(label = "Available", value = available, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
+                    PTStat(label = "Used", value = used, color = GymYellow, modifier = Modifier.weight(1f))
+                    PTStat(
+                        label = "Left",
+                        value = remaining,
+                        color = if (remaining == 0) GymRed else GymGreen,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Text(
+                    text = "$purchasedThisMonth bought this month" +
+                        if (carriedOver > 0) " + $carriedOver carried in" else "",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = { showAddDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = GymPurple),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Add Sessions", fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                if (overused > 0) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = GymRed.copy(alpha = 0.12f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Overused by $overused session" + if (overused == 1) "" else "s" +
+                                ". Adjust purchases for this month or an earlier one.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = GymRed,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                        )
+                    }
+                }
             }
         }
+    }
+
+    if (showAddDialog) {
+        AddPtSessionsDialog(
+            onConfirm = { count ->
+                onAddPurchased(count)
+                showAddDialog = false
+            },
+            onDismiss = { showAddDialog = false }
+        )
     }
 
     if (showEditDialog) {
@@ -284,6 +355,39 @@ fun PersonalTrainingCard(
             onDismiss = { showEditDialog = false }
         )
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddPtSessionsDialog(
+    onConfirm: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var count by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add Sessions") },
+        text = {
+            OutlinedTextField(
+                value = count,
+                onValueChange = { if (it.all { c -> c.isDigit() } && it.length <= 3) count = it },
+                label = { Text("How many sessions did you buy?") },
+                supportingText = { Text("Add 1 for a single session or any larger bundle.") },
+                singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(count.toIntOrNull() ?: 0) },
+                enabled = count.toIntOrNull()?.let { it > 0 } == true
+            ) { Text("Add") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -303,7 +407,7 @@ private fun EditCurrentMonthPtDialog(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (carriedOver > 0) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(Icons.Default.ArrowForward, contentDescription = null, tint = GymPurple, modifier = Modifier.size(14.dp))
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = GymPurple, modifier = Modifier.size(14.dp))
                         Text("+$carriedOver carried over from last month", style = MaterialTheme.typography.bodySmall, color = GymPurple)
                     }
                 }
@@ -348,84 +452,29 @@ fun PTStat(label: String, value: Int, color: Color, modifier: Modifier = Modifie
 
 @Composable
 fun CheckInCard(
-    selectedDateSession: TrainingSession?,
-    selectedDateFormatted: String,
-    isSelectedDateToday: Boolean,
+    todaySession: TrainingSession?,
     onCheckIn: (Boolean) -> Unit,
-    onRemoveSession: () -> Unit,
-    onPreviousDay: () -> Unit,
-    onNextDay: () -> Unit,
-    onSelectDate: (LocalDate) -> Unit,
-    onResetToToday: () -> Unit
+    onRemoveSession: () -> Unit
 ) {
-    var showDatePicker by remember { mutableStateOf(false) }
-    val alreadyCheckedIn = selectedDateSession != null
+    val todayFormatter = remember { DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", Locale.ENGLISH) }
+    val todayLabel = LocalDate.now().format(todayFormatter)
+    val alreadyCheckedIn = todaySession != null
 
     GymCard(icon = Icons.Default.EditCalendar, title = "Log Training", iconTint = GymGreen) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            IconButton(onClick = onPreviousDay, modifier = Modifier.size(36.dp)) {
-                Icon(
-                    Icons.Default.ChevronLeft,
-                    contentDescription = "Previous day",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+        Text(
+            text = todayLabel,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Medium
+        )
 
-            Text(
-                text = selectedDateFormatted,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Medium
-            )
+        Spacer(Modifier.height(6.dp))
 
-            IconButton(
-                onClick = onNextDay,
-                enabled = !isSelectedDateToday,
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(
-                    Icons.Default.ChevronRight,
-                    contentDescription = "Next day",
-                    tint = if (isSelectedDateToday)
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
-                    else
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TextButton(onClick = { showDatePicker = true }) {
-                Icon(
-                    Icons.Default.CalendarMonth,
-                    contentDescription = "Pick date",
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(Modifier.width(4.dp))
-                Text("Pick date", fontSize = 12.sp)
-            }
-
-            if (!isSelectedDateToday) {
-                Spacer(Modifier.width(8.dp))
-                TextButton(onClick = onResetToToday) {
-                    Icon(
-                        Icons.Default.Today,
-                        contentDescription = "Go to today",
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text("Today", fontSize = 12.sp)
-                }
-            }
-        }
+        Text(
+            text = "To log or edit past dates, use the heatmap or calendar below.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
         Spacer(Modifier.height(8.dp))
 
@@ -442,12 +491,12 @@ fun CheckInCard(
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = if (selectedDateSession!!.isPersonalTraining) "Personal Training Done!" else "Training Done!",
+                        text = if (todaySession!!.isPersonalTraining) "Personal Training Done!" else "Training Done!",
                         fontWeight = FontWeight.Bold,
                         color = GymGreen
                     )
                     Text(
-                        text = if (selectedDateSession.isPersonalTraining) "Personal training session logged" else "Regular training session logged",
+                        text = if (todaySession.isPersonalTraining) "Today's personal training session is logged" else "Today's regular training session is logged",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -457,9 +506,9 @@ fun CheckInCard(
             Spacer(Modifier.height(10.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                val switchLabel = if (selectedDateSession!!.isPersonalTraining) "Change to Regular" else "Change to PT"
+                val switchLabel = if (todaySession!!.isPersonalTraining) "Change to Regular" else "Change to PT"
                 OutlinedButton(
-                    onClick = { onCheckIn(!selectedDateSession.isPersonalTraining) },
+                    onClick = { onCheckIn(!todaySession.isPersonalTraining) },
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
                 ) {
@@ -500,24 +549,11 @@ fun CheckInCard(
             }
         }
     }
-
-    if (showDatePicker) {
-        GymDatePickerDialog(
-            title = "Select training date",
-            maxDateMillis = System.currentTimeMillis(),
-            onConfirm = { dateStr ->
-                onSelectDate(LocalDate.parse(dateStr))
-                showDatePicker = false
-            },
-            onDismiss = { showDatePicker = false }
-        )
-    }
 }
 
 @Composable
 fun ActivityHeatmap(
     sessions: List<TrainingSession>,
-    onDateClick: (LocalDate) -> Unit,
     onLogSession: (String, Boolean) -> Unit,
     onDeleteSession: (String) -> Unit,
     onEditSession: (String, Boolean) -> Unit
@@ -556,7 +592,6 @@ fun ActivityHeatmap(
             }
         }
     }
-
     val dayLabels = listOf("Mon", "", "Wed", "", "Fri", "", "Sun")
 
     GymCard(icon = Icons.Default.CalendarMonth, title = "Activity", iconTint = GymYellow) {
@@ -711,7 +746,6 @@ fun ActivityHeatmap(
                 yearMonth = calendarMonth,
                 sessionMap = sessionMap,
                 onMonthChange = { calendarMonth = it },
-                onDateClick = onDateClick,
                 onLogSession = onLogSession,
                 onDeleteSession = onDeleteSession,
                 onEditSession = onEditSession
@@ -720,57 +754,14 @@ fun ActivityHeatmap(
     }
 
     pendingDate?.let { date ->
-        val existingSession = sessionMap[date.toString()]
-        val dateLabel = date.format(DateTimeFormatter.ofPattern("d MMM yyyy"))
-        if (existingSession == null) {
-            AlertDialog(
-                onDismissRequest = { pendingDate = null },
-                title = { Text("Log session") },
-                text = { Text(dateLabel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                confirmButton = {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilledTonalButton(
-                            onClick = { onLogSession(date.toString(), false); pendingDate = null },
-                            colors = ButtonDefaults.filledTonalButtonColors(containerColor = GymBlue.copy(alpha = 0.15f))
-                        ) { Text("Regular", color = GymBlue) }
-                        FilledTonalButton(
-                            onClick = { onLogSession(date.toString(), true); pendingDate = null },
-                            colors = ButtonDefaults.filledTonalButtonColors(containerColor = GymPurple.copy(alpha = 0.15f))
-                        ) { Text("PT Training", color = GymPurple) }
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { pendingDate = null }) { Text("Cancel") }
-                }
-            )
-        } else {
-            val isPt = existingSession.isPersonalTraining
-            val typeLabel = if (isPt) "Personal Training" else "Regular"
-            val typeColor = if (isPt) HeatmapPT else HeatmapRegular
-            AlertDialog(
-                onDismissRequest = { pendingDate = null },
-                title = { Text("Session on $dateLabel") },
-                text = {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(typeColor))
-                        Text(typeLabel, style = MaterialTheme.typography.bodyMedium)
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { onEditSession(date.toString(), !isPt); pendingDate = null }) {
-                        Text("Change to ${if (isPt) "Regular" else "PT"}")
-                    }
-                },
-                dismissButton = {
-                    Row {
-                        TextButton(onClick = { onDeleteSession(date.toString()); pendingDate = null }) {
-                            Text("Remove", color = GymRed)
-                        }
-                        TextButton(onClick = { pendingDate = null }) { Text("Close") }
-                    }
-                }
-            )
-        }
+        TrainingSessionActionDialog(
+            date = date,
+            session = sessionMap[date.toString()],
+            onLogSession = onLogSession,
+            onDeleteSession = onDeleteSession,
+            onEditSession = onEditSession,
+            onDismiss = { pendingDate = null }
+        )
     }
 }
 
@@ -804,19 +795,34 @@ fun TrainingCalendar(
     yearMonth: YearMonth,
     sessionMap: Map<String, TrainingSession>,
     onMonthChange: (YearMonth) -> Unit,
-    onDateClick: (LocalDate) -> Unit,
     onLogSession: (String, Boolean) -> Unit,
     onDeleteSession: (String) -> Unit,
     onEditSession: (String, Boolean) -> Unit
 ) {
     val today = LocalDate.now()
-    val daysInMonth = yearMonth.lengthOfMonth()
-    val firstDayOfWeek = yearMonth.atDay(1).dayOfWeek.value
     val monthFormatter = remember { DateTimeFormatter.ofPattern("MMMM yyyy", Locale.ENGLISH) }
-    val sessionDialogFormatter = remember { DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", Locale.ENGLISH) }
     val canGoForward = yearMonth.isBefore(YearMonth.now())
-    var tappedSessionDate by remember { mutableStateOf<LocalDate?>(null) }
-    var tappedEmptyDate by remember { mutableStateOf<LocalDate?>(null) }
+    var pendingDate by remember { mutableStateOf<LocalDate?>(null) }
+    val scope = rememberCoroutineScope()
+    val animatedOffsetPx = remember(yearMonth) { Animatable(0f) }
+    var dragOffsetPx by remember(yearMonth) { mutableFloatStateOf(0f) }
+    var isDragging by remember { mutableStateOf(false) }
+    var calendarWidthPx by remember { mutableFloatStateOf(0f) }
+
+    fun animateMonthChange(targetMonth: YearMonth, targetOffsetPx: Float) {
+        scope.launch {
+            animatedOffsetPx.stop()
+            dragOffsetPx = 0f
+            isDragging = false
+            animatedOffsetPx.snapTo(0f)
+            animatedOffsetPx.animateTo(
+                targetValue = targetOffsetPx,
+                animationSpec = tween(durationMillis = 220)
+            )
+            onMonthChange(targetMonth)
+            animatedOffsetPx.snapTo(0f)
+        }
+    }
 
     Column {
         Row(
@@ -824,7 +830,16 @@ fun TrainingCalendar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            IconButton(onClick = { onMonthChange(yearMonth.minusMonths(1)) }, modifier = Modifier.size(36.dp)) {
+            IconButton(
+                onClick = {
+                    if (calendarWidthPx > 0f) {
+                        animateMonthChange(yearMonth.minusMonths(1), calendarWidthPx)
+                    } else {
+                        onMonthChange(yearMonth.minusMonths(1))
+                    }
+                },
+                modifier = Modifier.size(36.dp)
+            ) {
                 Icon(Icons.Default.ChevronLeft, contentDescription = "Previous month", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(
@@ -834,7 +849,13 @@ fun TrainingCalendar(
                 color = MaterialTheme.colorScheme.onSurface
             )
             IconButton(
-                onClick = { onMonthChange(yearMonth.plusMonths(1)) },
+                onClick = {
+                    if (calendarWidthPx > 0f) {
+                        animateMonthChange(yearMonth.plusMonths(1), -calendarWidthPx)
+                    } else {
+                        onMonthChange(yearMonth.plusMonths(1))
+                    }
+                },
                 enabled = canGoForward,
                 modifier = Modifier.size(36.dp)
             ) {
@@ -849,7 +870,133 @@ fun TrainingCalendar(
 
         Spacer(Modifier.height(8.dp))
 
-        val dayHeaders = listOf("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .onSizeChanged { calendarWidthPx = it.width.toFloat() }
+                .clipToBounds()
+                .pointerInput(yearMonth, canGoForward, calendarWidthPx) {
+                    if (calendarWidthPx <= 0f) return@pointerInput
+                    detectHorizontalDragGestures(
+                        onDragStart = {
+                            isDragging = true
+                            scope.launch {
+                                animatedOffsetPx.stop()
+                                animatedOffsetPx.snapTo(dragOffsetPx)
+                            }
+                        },
+                        onDragEnd = {
+                            val swipeThresholdPx = calendarWidthPx * 0.2f
+                            val targetMonth = when {
+                                dragOffsetPx > swipeThresholdPx -> yearMonth.minusMonths(1)
+                                dragOffsetPx < -swipeThresholdPx && canGoForward -> yearMonth.plusMonths(1)
+                                else -> null
+                            }
+                            val targetOffsetPx = when {
+                                dragOffsetPx > swipeThresholdPx -> calendarWidthPx
+                                dragOffsetPx < -swipeThresholdPx && canGoForward -> -calendarWidthPx
+                                else -> 0f
+                            }
+
+                            scope.launch {
+                                animatedOffsetPx.stop()
+                                animatedOffsetPx.snapTo(dragOffsetPx)
+                                isDragging = false
+                                animatedOffsetPx.animateTo(
+                                    targetValue = targetOffsetPx,
+                                    animationSpec = tween(durationMillis = 220)
+                                )
+                                targetMonth?.let(onMonthChange)
+                                dragOffsetPx = 0f
+                                animatedOffsetPx.snapTo(0f)
+                            }
+                        },
+                        onDragCancel = {
+                            scope.launch {
+                                animatedOffsetPx.stop()
+                                animatedOffsetPx.snapTo(dragOffsetPx)
+                                isDragging = false
+                                animatedOffsetPx.animateTo(
+                                    targetValue = 0f,
+                                    animationSpec = tween(durationMillis = 220)
+                                )
+                                dragOffsetPx = 0f
+                            }
+                        }
+                    ) { change, dragAmount ->
+                        change.consume()
+                        val minOffset = if (canGoForward) -calendarWidthPx else 0f
+                        dragOffsetPx = (dragOffsetPx + dragAmount).coerceIn(minOffset, calendarWidthPx)
+                    }
+                }
+        ) {
+            val monthOffsetPx = if (isDragging) dragOffsetPx else animatedOffsetPx.value
+            val previousMonth = yearMonth.minusMonths(1)
+            val nextMonth = yearMonth.plusMonths(1)
+
+            Box(modifier = Modifier.fillMaxWidth()) {
+                if (monthOffsetPx > 0f) {
+                    CalendarMonthContent(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .offset { IntOffset((monthOffsetPx - calendarWidthPx).roundToInt(), 0) },
+                        yearMonth = previousMonth,
+                        sessionMap = sessionMap,
+                        today = today,
+                        onDateClick = { pendingDate = it }
+                    )
+                }
+
+                CalendarMonthContent(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .offset { IntOffset(monthOffsetPx.roundToInt(), 0) },
+                    yearMonth = yearMonth,
+                    sessionMap = sessionMap,
+                    today = today,
+                    onDateClick = { pendingDate = it }
+                )
+
+                if (monthOffsetPx < 0f && canGoForward) {
+                    CalendarMonthContent(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .offset { IntOffset((monthOffsetPx + calendarWidthPx).roundToInt(), 0) },
+                        yearMonth = nextMonth,
+                        sessionMap = sessionMap,
+                        today = today,
+                        onDateClick = { pendingDate = it }
+                    )
+                }
+            }
+        }
+    }
+
+    pendingDate?.let { date ->
+        TrainingSessionActionDialog(
+            date = date,
+            session = sessionMap[date.toString()],
+            onLogSession = onLogSession,
+            onDeleteSession = onDeleteSession,
+            onEditSession = onEditSession,
+            onDismiss = { pendingDate = null }
+        )
+    }
+}
+
+@Composable
+private fun CalendarMonthContent(
+    modifier: Modifier = Modifier,
+    yearMonth: YearMonth,
+    sessionMap: Map<String, TrainingSession>,
+    today: LocalDate,
+    onDateClick: (LocalDate) -> Unit
+) {
+    val daysInMonth = yearMonth.lengthOfMonth()
+    val firstDayOfWeek = yearMonth.atDay(1).dayOfWeek.value
+    val dayHeaders = listOf("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
+
+    Column(modifier = modifier) {
         Row(modifier = Modifier.fillMaxWidth()) {
             dayHeaders.forEach { header ->
                 Text(
@@ -898,13 +1045,7 @@ fun TrainingCalendar(
                                     ) else Modifier
                                 )
                                 .then(
-                                    if (!isFuture) Modifier.clickable {
-                                        if (session != null) {
-                                            tappedSessionDate = date
-                                        } else {
-                                            tappedEmptyDate = date
-                                        }
-                                    } else Modifier
+                                    if (!isFuture) Modifier.clickable { onDateClick(date) } else Modifier
                                 ),
                             contentAlignment = Alignment.Center
                         ) {
@@ -955,150 +1096,124 @@ fun TrainingCalendar(
             )
         }
     }
+}
 
-    var editingSessionDate by remember { mutableStateOf<LocalDate?>(null) }
-
-    tappedEmptyDate?.let { date ->
-        val dateLabel = date.format(sessionDialogFormatter)
+@Composable
+private fun TrainingSessionActionDialog(
+    date: LocalDate,
+    session: TrainingSession?,
+    onLogSession: (String, Boolean) -> Unit,
+    onDeleteSession: (String) -> Unit,
+    onEditSession: (String, Boolean) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val dateLabel = remember(date) { date.format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH)) }
+    if (session == null) {
         AlertDialog(
-            onDismissRequest = { tappedEmptyDate = null },
+            onDismissRequest = onDismiss,
             title = { Text("Log session") },
-            text = { Text(dateLabel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-            confirmButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilledTonalButton(
-                        onClick = { onLogSession(date.toString(), false); tappedEmptyDate = null },
-                        colors = ButtonDefaults.filledTonalButtonColors(containerColor = GymBlue.copy(alpha = 0.15f))
-                    ) { Text("Regular", color = GymBlue) }
-                    FilledTonalButton(
-                        onClick = { onLogSession(date.toString(), true); tappedEmptyDate = null },
-                        colors = ButtonDefaults.filledTonalButtonColors(containerColor = GymPurple.copy(alpha = 0.15f))
-                    ) { Text("PT Training", color = GymPurple) }
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        dateLabel,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilledTonalButton(
+                            onClick = { onLogSession(date.toString(), false); onDismiss() },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.filledTonalButtonColors(containerColor = GymBlue.copy(alpha = 0.15f))
+                        ) { Text("Regular", color = GymBlue) }
+                        FilledTonalButton(
+                            onClick = { onLogSession(date.toString(), true); onDismiss() },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.filledTonalButtonColors(containerColor = GymPurple.copy(alpha = 0.15f))
+                        ) { Text("Personal", color = GymPurple) }
+                    }
                 }
             },
+            confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { tappedEmptyDate = null }) { Text("Cancel") }
+                TextButton(onClick = onDismiss) { Text("Cancel") }
             }
         )
-    }
-
-    tappedSessionDate?.let { date ->
-        val dateStr = date.toString()
-        val session = sessionMap[dateStr]
-        if (session != null) {
-            val typeLabel = if (session.isPersonalTraining) "Personal Training" else "Regular Training"
-            AlertDialog(
-                onDismissRequest = { tappedSessionDate = null },
-                title = { Text(date.format(sessionDialogFormatter)) },
-                text = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(10.dp)
-                                .clip(CircleShape)
-                                .background(if (session.isPersonalTraining) HeatmapPT else HeatmapRegular)
-                        )
-                        Spacer(Modifier.width(8.dp))
+    } else {
+        val isPt = session.isPersonalTraining
+        val typeLabel = if (isPt) "Personal Training" else "Regular"
+        val typeColor = if (isPt) HeatmapPT else HeatmapRegular
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("Session on $dateLabel") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(typeColor))
                         Text(typeLabel, style = MaterialTheme.typography.bodyMedium)
                     }
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        editingSessionDate = date
-                        tappedSessionDate = null
-                    }) { Text("Edit") }
-                },
-                dismissButton = {
-                    TextButton(onClick = {
-                        onDeleteSession(dateStr)
-                        tappedSessionDate = null
-                    }) {
-                        Text("Delete", color = GymRed)
-                    }
-                }
-            )
-        } else {
-            tappedSessionDate = null
-        }
-    }
-
-    editingSessionDate?.let { date ->
-        val dateStr = date.toString()
-        val session = sessionMap[dateStr]
-        if (session != null) {
-            AlertDialog(
-                onDismissRequest = { editingSessionDate = null },
-                title = { Text("Edit Session") },
-                text = {
-                    Column {
-                        Text(
-                            date.format(sessionDialogFormatter),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(16.dp))
-                        Text("Change session type:", style = MaterialTheme.typography.bodyMedium)
-                        Spacer(Modifier.height(12.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    Text(
+                        text = "Change session type:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                if (isPt) onEditSession(date.toString(), false)
+                                onDismiss()
+                            },
+                            modifier = Modifier.weight(1f),
+                            border = BorderStroke(
+                                1.dp,
+                                if (!isPt) HeatmapRegular else MaterialTheme.colorScheme.outline
+                            ),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (!isPt) HeatmapRegular.copy(alpha = 0.15f) else Color.Transparent
+                            )
                         ) {
-                            val isCurrentlyPt = session.isPersonalTraining
-                            OutlinedButton(
-                                onClick = {
-                                    if (isCurrentlyPt) {
-                                        onEditSession(dateStr, false)
-                                    }
-                                    editingSessionDate = null
-                                },
-                                modifier = Modifier.weight(1f),
-                                border = BorderStroke(
-                                    1.dp,
-                                    if (!isCurrentlyPt) HeatmapRegular else MaterialTheme.colorScheme.outline
-                                ),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = if (!isCurrentlyPt) HeatmapRegular.copy(alpha = 0.15f) else Color.Transparent
-                                )
-                            ) {
-                                Text(
-                                    "Regular",
-                                    color = if (!isCurrentlyPt) HeatmapRegular else MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            OutlinedButton(
-                                onClick = {
-                                    if (!isCurrentlyPt) {
-                                        onEditSession(dateStr, true)
-                                    }
-                                    editingSessionDate = null
-                                },
-                                modifier = Modifier.weight(1f),
-                                border = BorderStroke(
-                                    1.dp,
-                                    if (isCurrentlyPt) HeatmapPT else MaterialTheme.colorScheme.outline
-                                ),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = if (isCurrentlyPt) HeatmapPT.copy(alpha = 0.15f) else Color.Transparent
-                                )
-                            ) {
-                                Text(
-                                    "Personal",
-                                    color = if (isCurrentlyPt) HeatmapPT else MaterialTheme.colorScheme.onSurface
-                                )
-                            }
+                            Text(
+                                "Regular",
+                                color = if (!isPt) HeatmapRegular else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                if (!isPt) onEditSession(date.toString(), true)
+                                onDismiss()
+                            },
+                            modifier = Modifier.weight(1f),
+                            border = BorderStroke(
+                                1.dp,
+                                if (isPt) HeatmapPT else MaterialTheme.colorScheme.outline
+                            ),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (isPt) HeatmapPT.copy(alpha = 0.15f) else Color.Transparent
+                            )
+                        ) {
+                            Text(
+                                "Personal",
+                                color = if (isPt) HeatmapPT else MaterialTheme.colorScheme.onSurface
+                            )
                         }
                     }
-                },
-                confirmButton = {},
-                dismissButton = {
-                    TextButton(onClick = { editingSessionDate = null }) {
-                        Text("Cancel")
-                    }
                 }
-            )
-        } else {
-            editingSessionDate = null
-        }
+            },
+            confirmButton = {},
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { onDeleteSession(date.toString()); onDismiss() }) {
+                        Text("Remove", color = GymRed)
+                    }
+                    TextButton(onClick = onDismiss) { Text("Close") }
+                }
+            }
+        )
     }
 }
 

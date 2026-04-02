@@ -37,6 +37,12 @@ class GymPreferences(private val context: Context) {
         }
     }
 
+    suspend fun clearMembershipStartDate() {
+        context.dataStore.edit { prefs ->
+            prefs.remove(MEMBERSHIP_START_DATE)
+        }
+    }
+
     suspend fun setPersonalTrainingsPurchased(count: Int) {
         context.dataStore.edit { prefs ->
             prefs[PERSONAL_TRAININGS_PURCHASED] = count
