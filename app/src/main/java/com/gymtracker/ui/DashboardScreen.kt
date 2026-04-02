@@ -219,13 +219,39 @@ fun MembershipCard(
                     }
                 }
 
-                TextButton(
-                    onClick = { showDatePicker = true },
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Change payment date", fontSize = 12.sp)
+                if (daysRemaining == 0) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = GymRed.copy(alpha = 0.12f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Membership has expired. Set a new payment date to renew it.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = GymRed,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                        )
+                    }
+
+                    Button(
+                        onClick = { showDatePicker = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = GymBlue),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Set New Payment Date", fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    TextButton(
+                        onClick = { showDatePicker = true },
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Change payment date", fontSize = 12.sp)
+                    }
                 }
             }
         }
@@ -234,6 +260,7 @@ fun MembershipCard(
     if (showDatePicker) {
         GymDatePickerDialog(
             title = "When did you pay?",
+            maxDateMillis = System.currentTimeMillis(),
             onConfirm = { date ->
                 onSetDate(date)
                 showDatePicker = false
@@ -283,35 +310,30 @@ fun PersonalTrainingCard(
             )
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Surface(
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    color = remainingColor.copy(alpha = 0.12f)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.Bottom
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 18.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(
-                            text = remaining.toString(),
-                            style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold),
-                            color = remainingColor
-                        )
-                        Text(
-                            text = remainingLabel,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = "Used $used of $available available this month",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    Text(
+                        text = remaining.toString(),
+                        style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = remainingLabel,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = remainingColor,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(bottom = 3.dp)
+                    )
                 }
+
+                Text(
+                    text = "Used $used of $available available this month",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
                 Text(
                     text = "$purchasedThisMonth bought this month" +
@@ -1491,17 +1513,19 @@ fun GymCard(
 
 @Composable
 fun EmptyStateRow(message: String, actionLabel: String, onClick: () -> Unit) {
-    Row(
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
             text = message,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium
         )
-        FilledTonalButton(onClick = onClick) {
+        FilledTonalButton(
+            onClick = onClick,
+            modifier = Modifier.fillMaxWidth()
+        ) {
             Text(actionLabel, fontSize = 12.sp)
         }
     }
@@ -1548,45 +1572,6 @@ fun GymDatePickerDialog(
         DatePicker(state = state, title = { Text(title, modifier = Modifier.padding(start = 24.dp, top = 16.dp)) })
     }
 }
-
-@Composable
-fun PTCountDialog(
-    current: Int,
-    onConfirm: (Int) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var count by remember { mutableStateOf(if (current == 0) "" else current.toString()) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Personal Training Sessions") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "How many personal training sessions did you purchase?",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                OutlinedTextField(
-                    value = count,
-                    onValueChange = { if (it.all { c -> c.isDigit() } && it.length <= 3) count = it },
-                    label = { Text("Number of sessions") },
-                    singleLine = true,
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
-                    )
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(count.toIntOrNull() ?: 0) }) { Text("Save") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
-    )
-}
-
 
 private fun formatDisplayDate(isoDate: String): String {
     return try {

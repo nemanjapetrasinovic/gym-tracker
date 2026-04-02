@@ -193,6 +193,11 @@ fun buildRangeBackupPayload(
     )
 }
 
+fun isAllowedMembershipStartDate(date: String, today: LocalDate = LocalDate.now()): Boolean {
+    val parsedDate = runCatching { LocalDate.parse(date) }.getOrNull() ?: return false
+    return !parsedDate.isAfter(today)
+}
+
 fun computePtCarryover(
     purchases: List<PtPurchase>,
     usedByMonth: List<MonthCount>,
@@ -401,7 +406,9 @@ class GymViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setMembershipStartDate(date: String) {
         viewModelScope.launch {
-            repository.setMembershipStartDate(date)
+            if (isAllowedMembershipStartDate(date)) {
+                repository.setMembershipStartDate(date)
+            }
         }
     }
 
