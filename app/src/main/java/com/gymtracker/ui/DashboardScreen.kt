@@ -672,7 +672,9 @@ fun ActivityHeatmap(
         }
     }
     val endDate = remember(today) {
-        today.plusDays((7 - today.dayOfWeek.value).toLong())
+        YearMonth.from(today).atEndOfMonth().let { monthEnd ->
+            monthEnd.minusDays((monthEnd.dayOfWeek.value % 7).toLong())
+        }
     }
 
     val allDays = remember(startDate, endDate) {
@@ -689,12 +691,13 @@ fun ActivityHeatmap(
 
     val monthLabels = remember(weeks) {
         buildMap {
-            var lastMonth = -1
+            var lastMonth: YearMonth? = null
             weeks.forEachIndexed { idx, week ->
-                val month = week.first().monthValue
-                if (month != lastMonth) {
-                    put(idx, week.first().month.getDisplayName(TextStyle.SHORT, Locale.ENGLISH))
-                    lastMonth = month
+                val labelMonthDate = week.firstOrNull { it.dayOfMonth == 1 } ?: week.first()
+                val labelMonth = YearMonth.from(labelMonthDate)
+                if (labelMonth != lastMonth) {
+                    put(idx, labelMonth.month.getDisplayName(TextStyle.SHORT, Locale.ENGLISH))
+                    lastMonth = labelMonth
                 }
             }
         }
