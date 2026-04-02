@@ -152,7 +152,23 @@ fun MembershipCard(
         else                  -> GymGreen
     }
 
-    GymCard(icon = Icons.Default.CardMembership, title = "Membership", iconTint = GymBlue) {
+    GymCard(
+        icon = Icons.Default.CardMembership,
+        title = "Membership",
+        iconTint = GymBlue,
+        action = if (startDate != null) {
+            {
+                IconButton(onClick = { showDatePicker = true }, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Default.Edit,
+                        contentDescription = "Change payment date",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        } else null
+    ) {
         if (startDate == null) {
             EmptyStateRow(
                 message = "No membership date set",
@@ -243,15 +259,6 @@ fun MembershipCard(
                         Spacer(Modifier.width(6.dp))
                         Text("Set New Payment Date", fontWeight = FontWeight.Bold)
                     }
-                } else {
-                    TextButton(
-                        onClick = { showDatePicker = true },
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Change payment date", fontSize = 12.sp)
-                    }
                 }
             }
         }
@@ -317,8 +324,8 @@ fun PersonalTrainingCard(
                 ) {
                     Text(
                         text = remaining.toString(),
-                        style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
+                        style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold),
+                        color = remainingColor
                     )
                     Text(
                         text = remainingLabel,
