@@ -19,7 +19,15 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            ndk {
+                debugSymbolLevel = "FULL"
+            }
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
     compileOptions {
