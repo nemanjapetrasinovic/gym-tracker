@@ -16,7 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -123,7 +122,7 @@ fun SettingsScreen(
         }
 
         GymCard(icon = Icons.Default.Person, title = "Personal Training Purchases", iconTint = GymPurple) {
-            if (state.ptPurchases.isEmpty()) {
+            if (state.ptMonthlyBreakdown.isEmpty()) {
                 Text(
                     text = "No purchases recorded yet. Add your monthly PT purchases to track usage.",
                     style = MaterialTheme.typography.bodySmall,
@@ -131,41 +130,43 @@ fun SettingsScreen(
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
             } else {
-                state.ptPurchases.forEach { purchase ->
-                    val ym = YearMonth.parse(purchase.month)
-                    val label = "${ym.month.getDisplayName(TextStyle.FULL, Locale.ENGLISH)} ${ym.year}"
+                state.ptMonthlyBreakdown.forEach { entry ->
+                    val ym = YearMonth.parse(entry.month)
+                    val monthLabel = "${ym.month.getDisplayName(TextStyle.FULL, Locale.ENGLISH)} ${ym.year}"
+                    val hasPurchase = entry.purchased > 0
                     Surface(
                         shape = RoundedCornerShape(10.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 3.dp)
-                            .clickable { editingPurchase = purchase }
+                            .then(
+                                if (hasPurchase) Modifier.clickable {
+                                    editingPurchase = state.ptPurchases.find { it.month == entry.month }
+                                        ?: com.gymtracker.data.PtPurchase(entry.month, 0)
+                                } else Modifier
+                            )
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = label,
+                                text = monthLabel,
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.weight(1f)
                             )
                             Text(
-                                text = "${purchase.count} sessions",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = GymPurple,
-                                fontWeight = FontWeight.Bold
+                                text = "${entry.purchased} bought · ${entry.used} used · ${entry.carriedOut} left",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Spacer(Modifier.width(8.dp))
-                            Icon(
-                                Icons.Default.Edit,
-                                contentDescription = "Edit",
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            if (hasPurchase) {
+                                Spacer(Modifier.width(8.dp))
+                                Icon(Icons.Default.Edit, contentDescription = "Edit", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                     }
                 }
@@ -220,6 +221,10 @@ fun SettingsScreen(
             purchase = purchase,
             onConfirm = { count ->
                 vm.setPtPurchaseForMonth(purchase.month, count)
+                editingPurchase = null
+            },
+            onDelete = {
+                vm.setPtPurchaseForMonth(purchase.month, 0)
                 editingPurchase = null
             },
             onDismiss = { editingPurchase = null }
@@ -291,6 +296,7 @@ private fun SummaryStat(label: String, value: Int, color: androidx.compose.ui.gr
 private fun EditPurchaseDialog(
     purchase: PtPurchase,
     onConfirm: (Int) -> Unit,
+    onDelete: () -> Unit,
     onDismiss: () -> Unit
 ) {
     var count by remember { mutableStateOf(purchase.count.toString()) }
@@ -301,27 +307,23 @@ private fun EditPurchaseDialog(
         onDismissRequest = onDismiss,
         title = { Text("Edit: $label") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "Set to 0 to remove this month.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                OutlinedTextField(
-                    value = count,
-                    onValueChange = { if (it.all { c -> c.isDigit() } && it.length <= 3) count = it },
-                    label = { Text("Number of sessions") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
+            OutlinedTextField(
+                value = count,
+                onValueChange = { if (it.all { c -> c.isDigit() } && it.length <= 3) count = it },
+                label = { Text("Number of sessions") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth()
+            )
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(count.toIntOrNull() ?: 0) }) { Text("Save") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            Row {
+                TextButton(onClick = { onDelete(); onDismiss() }) { Text("Delete", color = GymRed) }
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
         }
     )
 }

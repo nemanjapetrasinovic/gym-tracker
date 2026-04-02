@@ -17,6 +17,8 @@ data class PtPurchase(
     val count: Int
 )
 
+data class MonthCount(val month: String, val count: Int)
+
 @Dao
 interface TrainingSessionDao {
 
@@ -43,6 +45,9 @@ interface TrainingSessionDao {
 
     @Query("SELECT COUNT(*) FROM training_sessions WHERE isPersonalTraining = 1")
     fun getPersonalTrainingCount(): Flow<Int>
+
+    @Query("SELECT strftime('%Y-%m', date) as month, COUNT(*) as count FROM training_sessions WHERE isPersonalTraining = 1 GROUP BY strftime('%Y-%m', date)")
+    fun getPtUsedByMonth(): Flow<List<MonthCount>>
 }
 
 @Dao

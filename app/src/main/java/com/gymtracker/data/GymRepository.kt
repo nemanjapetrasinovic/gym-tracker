@@ -15,6 +15,7 @@ class GymRepository(
     val totalPtPurchased: Flow<Int> = ptDao.getTotalPurchased().map { it ?: 0 }
     val allPtPurchases: Flow<List<PtPurchase>> = ptDao.getAllPurchases()
     val lastBackupTimestamp: Flow<Long?> = prefs.lastBackupTimestamp
+    val ptUsedByMonth: Flow<List<MonthCount>> = dao.getPtUsedByMonth()
 
     suspend fun checkInToday(date: String, isPersonalTraining: Boolean) {
         val existing = dao.getSessionByDate(date)

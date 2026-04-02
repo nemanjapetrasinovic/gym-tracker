@@ -7,10 +7,19 @@ import com.gymtracker.data.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 enum class Screen { Dashboard, Settings }
+
+data class PtMonthBreakdown(
+    val month: String,      // "YYYY-MM"
+    val purchased: Int,
+    val carriedIn: Int,
+    val used: Int,
+    val carriedOut: Int     // max(0, purchased + carriedIn - used)
+)
 
 data class GymUiState(
     val membershipStartDate: String? = null,
@@ -20,6 +29,9 @@ data class GymUiState(
     val personalTrainingsPurchased: Int = 0,
     val personalTrainingsUsed: Int = 0,
     val personalTrainingsRemaining: Int = 0,
+    val ptPurchasedThisMonth: Int = 0,
+    val ptCarriedOver: Int = 0,
+    val ptMonthlyBreakdown: List<PtMonthBreakdown> = emptyList(),
     val todaySession: TrainingSession? = null,
     val allSessions: List<TrainingSession> = emptyList(),
     val selectedDate: String = LocalDate.now().toString(),
@@ -29,6 +41,37 @@ data class GymUiState(
     val ptPurchases: List<PtPurchase> = emptyList(),
     val lastBackupTimestamp: Long? = null
 )
+
+fun computePtCarryover(
+    purchases: List<PtPurchase>,
+    usedByMonth: List<MonthCount>,
+    currentMonth: String
+): Triple<Int, Int, List<PtMonthBreakdown>> {
+    val purchaseMap = purchases.associateBy { it.month }
+    val usedMap = usedByMonth.associateBy({ it.month }, { it.count })
+    val allMonthKeys = (purchaseMap.keys + usedMap.keys).toSortedSet()
+    if (allMonthKeys.isEmpty()) return Triple(0, 0, emptyList())
+
+    val breakdown = mutableListOf<PtMonthBreakdown>()
+    var carryover = 0
+    var month = YearMonth.parse(allMonthKeys.first())
+    val current = YearMonth.parse(currentMonth)
+
+    while (!month.isAfter(current)) {
+        val monthStr = month.toString()
+        val purchased = purchaseMap[monthStr]?.count ?: 0
+        val used = usedMap[monthStr] ?: 0
+        val carriedOut = maxOf(0, purchased + carryover - used)
+        breakdown.add(PtMonthBreakdown(monthStr, purchased, carryover, used, carriedOut))
+        carryover = carriedOut
+        month = month.plusMonths(1)
+    }
+
+    val currentBreakdown = breakdown.lastOrNull { it.month == currentMonth }
+    val purchasedThisMonth = purchaseMap[currentMonth]?.count ?: 0
+    val carriedIntoThisMonth = currentBreakdown?.carriedIn ?: 0
+    return Triple(purchasedThisMonth, carriedIntoThisMonth, breakdown)
+}
 
 class GymViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -63,7 +106,11 @@ class GymViewModel(application: Application) : AndroidViewModel(application) {
         repository.personalTrainingCount,
         repository.allSessions,
         _selectedDate,
-        combine(repository.allPtPurchases, repository.lastBackupTimestamp) { pt, ts -> pt to ts }
+        combine(
+            repository.allPtPurchases,
+            repository.lastBackupTimestamp,
+            repository.ptUsedByMonth
+        ) { pt, ts, usedByMonth -> Triple(pt, ts, usedByMonth) }
     ) { args ->
         val membershipStart = args[0] as String?
         val ptPurchased = args[1] as Int
@@ -72,9 +119,10 @@ class GymViewModel(application: Application) : AndroidViewModel(application) {
         val sessions = args[3] as List<TrainingSession>
         val selectedDate = args[4] as LocalDate
         @Suppress("UNCHECKED_CAST")
-        val extra = args[5] as Pair<List<PtPurchase>, Long?>
+        val extra = args[5] as Triple<List<PtPurchase>, Long?, List<MonthCount>>
         val ptPurchases = extra.first
         val lastBackup = extra.second
+        val ptUsedByMonth = extra.third
 
         val today = LocalDate.now().toString()
         val todaySession = sessions.find { it.date == today }
@@ -95,6 +143,9 @@ class GymViewModel(application: Application) : AndroidViewModel(application) {
             progressFraction = elapsed / totalDays.toFloat()
         }
 
+        val currentMonth = YearMonth.now().toString()
+        val (purchasedThisMonth, carriedOver, monthlyBreakdown) = computePtCarryover(ptPurchases, ptUsedByMonth, currentMonth)
+
         GymUiState(
             membershipStartDate = membershipStart,
             membershipDaysRemaining = daysRemaining,
@@ -103,6 +154,9 @@ class GymViewModel(application: Application) : AndroidViewModel(application) {
             personalTrainingsPurchased = ptPurchased,
             personalTrainingsUsed = ptUsed,
             personalTrainingsRemaining = maxOf(0, ptPurchased - ptUsed),
+            ptPurchasedThisMonth = purchasedThisMonth,
+            ptCarriedOver = carriedOver,
+            ptMonthlyBreakdown = monthlyBreakdown,
             todaySession = todaySession,
             allSessions = sessions,
             selectedDate = selectedDateStr,
@@ -153,6 +207,12 @@ class GymViewModel(application: Application) : AndroidViewModel(application) {
     fun setPtPurchaseForMonth(month: String, count: Int) {
         viewModelScope.launch {
             repository.setPtPurchaseForMonth(month, count)
+        }
+    }
+
+    fun checkInForDate(date: String, isPersonalTraining: Boolean) {
+        viewModelScope.launch {
+            repository.checkInToday(date, isPersonalTraining)
         }
     }
 
