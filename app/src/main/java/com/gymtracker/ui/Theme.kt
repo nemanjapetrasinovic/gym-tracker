@@ -25,6 +25,7 @@ val GymGreen = Color(0xFF4ECDC4)
 val GymPurple = Color(0xFF7B8CDE)
 val GymRed = Color(0xFFE57373)
 val GymYellow = Color(0xFFF0C674)
+val GymYellowLight = Color(0xFFB7791F)
 
 val HeatmapRegular = Color(0xFF5BB5E0)
 val HeatmapPT = Color(0xFF7B8CDE)
@@ -97,6 +98,9 @@ fun GymTrackerTheme(
         content = content
     )
 }
+
+@Composable
+fun gymYellowForTheme(): Color = if (isSystemInDarkTheme()) GymYellow else GymYellowLight
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this

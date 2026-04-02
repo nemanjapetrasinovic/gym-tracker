@@ -54,18 +54,14 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
 
-    // Room
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
 
-    // DataStore
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
-    // Splash screen
     implementation("androidx.core:core-splashscreen:1.0.1")
 
-    // Icons extended
     implementation("androidx.compose.material:material-icons-extended:1.7.5")
 
     debugImplementation(libs.androidx.ui.tooling)

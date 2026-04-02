@@ -144,11 +144,12 @@ fun MembershipCard(
     onSetDate: (String) -> Unit
 ) {
     var showDatePicker by remember { mutableStateOf(false) }
+    val warningYellow = gymYellowForTheme()
 
     val statusColor = when {
         daysRemaining == null -> MaterialTheme.colorScheme.onSurfaceVariant
         daysRemaining <= 5    -> GymRed
-        daysRemaining <= 10   -> GymYellow
+        daysRemaining <= 10   -> warningYellow
         else                  -> GymGreen
     }
 
@@ -173,6 +174,7 @@ fun MembershipCard(
             EmptyStateRow(
                 message = "No membership date set",
                 actionLabel = "Set Payment Date",
+                actionColor = GymBlue,
                 onClick = { showDatePicker = true }
             )
         } else {
@@ -313,6 +315,7 @@ fun PersonalTrainingCard(
             EmptyStateRow(
                 message = "No personal trainings added",
                 actionLabel = "Add Sessions",
+                actionColor = GymPurple,
                 onClick = { showAddDialog = true }
             )
         } else {
@@ -650,6 +653,7 @@ fun ActivityHeatmap(
     var showCalendar by remember { mutableStateOf(false) }
     var calendarMonth by remember { mutableStateOf(YearMonth.now()) }
     var pendingDate by remember { mutableStateOf<LocalDate?>(null) }
+    val warningYellow = gymYellowForTheme()
 
     val today = LocalDate.now()
     val weeksToShow = 16
@@ -714,7 +718,7 @@ fun ActivityHeatmap(
         }
     }
 
-    GymCard(icon = Icons.Default.CalendarMonth, title = "Activity", iconTint = GymYellow) {
+    GymCard(icon = Icons.Default.CalendarMonth, title = "Activity", iconTint = warningYellow) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             modifier = Modifier
@@ -1487,9 +1491,22 @@ fun GymCard(
     action: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val isDarkTheme = isSystemInDarkTheme()
+    val cardColor = if (isDarkTheme) {
+        MaterialTheme.colorScheme.surface
+    } else {
+        Color.White
+    }
+    val cardBorder = if (isDarkTheme) {
+        null
+    } else {
+        BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
+    }
+
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
+        color = cardColor,
+        border = cardBorder,
         tonalElevation = 2.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -1522,7 +1539,12 @@ fun GymCard(
 }
 
 @Composable
-fun EmptyStateRow(message: String, actionLabel: String, onClick: () -> Unit) {
+fun EmptyStateRow(
+    message: String,
+    actionLabel: String,
+    actionColor: Color,
+    onClick: () -> Unit
+) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -1534,7 +1556,11 @@ fun EmptyStateRow(message: String, actionLabel: String, onClick: () -> Unit) {
         )
         FilledTonalButton(
             onClick = onClick,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.filledTonalButtonColors(
+                containerColor = actionColor,
+                contentColor = Color.White
+            )
         ) {
             Text(actionLabel, fontSize = 12.sp)
         }

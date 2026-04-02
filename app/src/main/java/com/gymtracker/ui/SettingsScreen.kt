@@ -42,6 +42,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
+    val warningYellow = gymYellowForTheme()
     var showRestoreConfirm by remember { mutableStateOf(false) }
     var showBackupChoice by remember { mutableStateOf(false) }
     var showFromDatePicker by remember { mutableStateOf(false) }
@@ -197,16 +198,29 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
-                        modifier = Modifier.padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        SummaryStat("Available", selectedEntry.available, MaterialTheme.colorScheme.onSurface)
-                        SummaryStat("Used", selectedEntry.used, GymYellow)
                         SummaryStat(
-                            "Left",
-                            selectedEntry.carriedOut,
-                            if (selectedEntry.carriedOut == 0) GymRed else GymGreen
+                            label = "Available",
+                            value = selectedEntry.available,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+                        SummaryStat(
+                            label = "Used",
+                            value = selectedEntry.used,
+                            color = warningYellow,
+                            modifier = Modifier.weight(1f)
+                        )
+                        SummaryStat(
+                            label = "Left",
+                            value = selectedEntry.carriedOut,
+                            color = if (selectedEntry.carriedOut == 0) GymRed else GymGreen,
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
@@ -324,16 +338,29 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
-                    modifier = Modifier.padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    SummaryStat("Total", state.personalTrainingsPurchased, MaterialTheme.colorScheme.onSurface)
-                    SummaryStat("Used", state.personalTrainingsUsed, GymYellow)
                     SummaryStat(
-                        "Left Now",
-                        state.ptRemainingThisMonth,
-                        if (state.ptRemainingThisMonth == 0) GymRed else GymGreen
+                        label = "Total",
+                        value = state.personalTrainingsPurchased,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+                    SummaryStat(
+                        label = "Used",
+                        value = state.personalTrainingsUsed,
+                        color = warningYellow,
+                        modifier = Modifier.weight(1f)
+                    )
+                    SummaryStat(
+                        label = "Left Now",
+                        value = state.ptRemainingThisMonth,
+                        color = if (state.ptRemainingThisMonth == 0) GymRed else GymGreen,
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
@@ -426,8 +453,16 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun SummaryStat(label: String, value: Int, color: androidx.compose.ui.graphics.Color) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+private fun SummaryStat(
+    label: String,
+    value: Int,
+    color: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
         Text(
             text = "$value",
             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
